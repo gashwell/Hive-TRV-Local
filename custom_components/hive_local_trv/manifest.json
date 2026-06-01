@@ -1,10 +1,11 @@
 {
   "domain": "hive_local_trv",
   "name": "Hive Local TRV",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "documentation": "https://github.com/gashwell/Hive-TRV-Local",
   "issue_tracker": "https://github.com/gashwell/Hive-TRV-Local/issues",
-  "dependencies": [
+  "dependencies": [],
+  "after_dependencies": [
     "mqtt"
   ],
   "codeowners": [
