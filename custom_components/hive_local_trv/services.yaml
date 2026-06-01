@@ -1,0 +1,139 @@
+boost:
+  name: Boost TRV
+  description: Start a timed boost on a TRV or room group climate entity.
+  fields:
+    entity_id:
+      name: Climate entity
+      description: The TRV or room group climate entity to boost.
+      required: true
+      selector:
+        entity:
+          domain: climate
+    temperature:
+      name: Temperature
+      description: Boost target temperature in °C. Uses stored default if omitted.
+      required: false
+      selector:
+        number:
+          min: 10
+          max: 32
+          step: 0.5
+          unit_of_measurement: "°C"
+          mode: box
+    duration:
+      name: Duration
+      description: Boost duration in minutes (1–1440). Uses stored default if omitted.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1440
+          mode: box
+
+end_boost:
+  name: End TRV Boost
+  description: Cancel an active boost and restore the previous mode.
+  fields:
+    entity_id:
+      name: Climate entity
+      description: The TRV or room group climate entity.
+      required: true
+      selector:
+        entity:
+          domain: climate
+
+set_schedule:
+  name: Set TRV Schedule
+  description: Set a weekly heating schedule for a TRV or room group.
+  fields:
+    entity_id:
+      name: Climate entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+    schedule:
+      name: Schedule
+      description: List of slots. Each slot needs days (list 0=Mon–6=Sun), time (HH:MM), and temperature.
+      required: true
+      example: "[{days: [0,1,2,3,4], time: '06:30', temperature: 20.5}]"
+      selector:
+        object:
+
+clear_schedule:
+  name: Clear TRV Schedule
+  description: Remove the heating schedule from a TRV or room group.
+  fields:
+    entity_id:
+      name: Climate entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+
+advance_schedule:
+  name: Advance TRV Schedule
+  description: Skip to the next scheduled slot immediately.
+  fields:
+    entity_id:
+      name: Climate entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+
+set_holiday:
+  name: Set Holiday
+  description: Activate frost protection for a date range. All TRVs restore automatically on return.
+  fields:
+    departure:
+      name: Departure
+      description: ISO 8601 datetime (e.g. 2025-08-01T09:00:00).
+      required: true
+      selector:
+        datetime:
+    return:
+      name: Return
+      description: ISO 8601 datetime when frost protection ends.
+      required: true
+      selector:
+        datetime:
+
+cancel_holiday:
+  name: Cancel Holiday
+  description: Cancel an active or pending holiday and restore all TRV modes.
+
+add_room:
+  name: Add Room Group
+  description: Create a virtual room group controlling multiple TRVs together.
+  fields:
+    room_name:
+      name: Room name
+      description: Display name for the room group.
+      required: true
+      selector:
+        text:
+    trv_entity_ids:
+      name: TRV friendly names
+      description: Zigbee2MQTT friendly names of TRVs in this room.
+      required: true
+      selector:
+        object:
+    temp_sensor_entity_ids:
+      name: Extra temperature sensors
+      description: Additional HA temperature sensor entities to include in the room average.
+      required: false
+      selector:
+        entity:
+          domain: sensor
+          multiple: true
+
+remove_room:
+  name: Remove Room Group
+  description: Remove a room group. Individual TRV entities are not affected.
+  fields:
+    room_name:
+      name: Room name
+      required: true
+      selector:
+        text:
