@@ -1,4 +1,8 @@
-"""Hive Local TRV integration."""
+"""Hive Local TRV — DIAGNOSTIC BUILD.
+
+Every import and setup step is logged at WARNING level.
+Check Settings → System → Logs after restarting HA.
+"""
 from __future__ import annotations
 
 import logging
@@ -6,157 +10,307 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-import voluptuous as vol
+_LOGGER_DIAG = logging.getLogger(__name__)
+_LOGGER_DIAG.warning("DIAG [__init__] module load started")
 
-from awesomeversion.awesomeversion import AwesomeVersion
+try:
+    import voluptuous as vol
+    _LOGGER_DIAG.warning("DIAG [__init__] voluptuous imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: voluptuous: %s", exc)
+    raise
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import __version__ as HA_VERSION
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.typing import ConfigType
+try:
+    from awesomeversion.awesomeversion import AwesomeVersion
+    _LOGGER_DIAG.warning("DIAG [__init__] awesomeversion imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: awesomeversion: %s", exc)
+    raise
 
-from .const import (
-    ATTR_BOOST_DURATION,
-    ATTR_BOOST_TEMPERATURE,
-    ATTR_DEPARTURE,
-    ATTR_RETURN,
-    ATTR_ROOM_NAME,
-    ATTR_ROOM_SENSORS,
-    ATTR_ROOM_TRVS,
-    ATTR_SCHEDULE,
-    CONF_BOILER_ENTITY,
-    CONF_PERSON_ENTITIES,
-    CONF_Z2M_BASE_TOPIC,
-    DATA_HUB,
-    DATA_STORE,
-    DEFAULT_BOOST_MINUTES,
-    DEFAULT_BOOST_TEMP,
-    DOMAIN,
-    LOGGER,
-    MIN_HA_VERSION,
-    PLATFORMS,
-    SERVICE_ADVANCE_SCHEDULE,
-    SERVICE_ADD_ROOM,
-    SERVICE_BOOST,
-    SERVICE_CANCEL_HOLIDAY,
-    SERVICE_CLEAR_SCHEDULE,
-    SERVICE_END_BOOST,
-    SERVICE_REMOVE_ROOM,
-    SERVICE_SET_HOLIDAY,
-    SERVICE_SET_SCHEDULE,
-)
-from .coordinator import HiveTRVHub
-from .holiday import HolidayManager
-from .presence import PresenceManager
-from .room import HiveRoomCoordinator
-from .schedule import ScheduleManager
-from .storage import HiveTRVStore
+try:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.const import __version__ as HA_VERSION
+    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.helpers import config_validation as cv
+    from homeassistant.helpers.typing import ConfigType
+    _LOGGER_DIAG.warning("DIAG [__init__] homeassistant core imports OK — HA_VERSION=%s", HA_VERSION)
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: homeassistant imports: %s", exc, exc_info=True)
+    raise
 
-# Tell HA this integration only supports UI configuration — no YAML setup
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+try:
+    from .const import (
+        ATTR_BOOST_DURATION,
+        ATTR_BOOST_TEMPERATURE,
+        ATTR_DEPARTURE,
+        ATTR_RETURN,
+        ATTR_ROOM_NAME,
+        ATTR_ROOM_SENSORS,
+        ATTR_ROOM_TRVS,
+        ATTR_SCHEDULE,
+        CONF_BOILER_ENTITY,
+        CONF_PERSON_ENTITIES,
+        CONF_Z2M_BASE_TOPIC,
+        DATA_HUB,
+        DATA_STORE,
+        DEFAULT_BOOST_MINUTES,
+        DEFAULT_BOOST_TEMP,
+        DOMAIN,
+        LOGGER,
+        MIN_HA_VERSION,
+        PLATFORMS,
+        SERVICE_ADVANCE_SCHEDULE,
+        SERVICE_ADD_ROOM,
+        SERVICE_BOOST,
+        SERVICE_CANCEL_HOLIDAY,
+        SERVICE_CLEAR_SCHEDULE,
+        SERVICE_END_BOOST,
+        SERVICE_REMOVE_ROOM,
+        SERVICE_SET_HOLIDAY,
+        SERVICE_SET_SCHEDULE,
+    )
+    _LOGGER_DIAG.warning(
+        "DIAG [__init__] .const imported OK — DOMAIN=%s MIN_HA_VERSION=%s PLATFORMS=%s",
+        DOMAIN, MIN_HA_VERSION, PLATFORMS
+    )
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .const import: %s", exc, exc_info=True)
+    raise
 
-# ── Service schemas ────────────────────────────────────────────────────────────
+try:
+    from .coordinator import HiveTRVHub
+    _LOGGER_DIAG.warning("DIAG [__init__] .coordinator imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .coordinator: %s", exc, exc_info=True)
+    raise
 
-_BOOST_SCHEMA = vol.Schema({
-    vol.Required("entity_id"): str,
-    vol.Optional(ATTR_BOOST_TEMPERATURE, default=DEFAULT_BOOST_TEMP): vol.Coerce(float),
-    vol.Optional(ATTR_BOOST_DURATION, default=DEFAULT_BOOST_MINUTES): vol.All(int, vol.Range(min=1, max=1440)),
-})
-_END_BOOST_SCHEMA         = vol.Schema({vol.Required("entity_id"): str})
-_SET_SCHEDULE_SCHEMA      = vol.Schema({
-    vol.Required("entity_id"): str,
-    vol.Required(ATTR_SCHEDULE): [vol.Schema({
-        vol.Required("days"):        [vol.All(int, vol.Range(min=0, max=6))],
-        vol.Required("time"):        str,
-        vol.Required("temperature"): vol.Coerce(float),
-    })],
-})
-_CLEAR_SCHEDULE_SCHEMA    = vol.Schema({vol.Required("entity_id"): str})
-_ADVANCE_SCHEDULE_SCHEMA  = vol.Schema({vol.Required("entity_id"): str})
-_SET_HOLIDAY_SCHEMA       = vol.Schema({
-    vol.Required(ATTR_DEPARTURE): str,
-    vol.Required(ATTR_RETURN):    str,
-})
-_CANCEL_HOLIDAY_SCHEMA    = vol.Schema({})
-_ADD_ROOM_SCHEMA          = vol.Schema({
-    vol.Required(ATTR_ROOM_NAME):                      str,
-    vol.Required(ATTR_ROOM_TRVS):                      [str],
-    vol.Optional(ATTR_ROOM_SENSORS, default=[]):        [str],
-})
-_REMOVE_ROOM_SCHEMA       = vol.Schema({vol.Required(ATTR_ROOM_NAME): str})
+try:
+    from .holiday import HolidayManager
+    _LOGGER_DIAG.warning("DIAG [__init__] .holiday imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .holiday: %s", exc, exc_info=True)
+    raise
+
+try:
+    from .presence import PresenceManager
+    _LOGGER_DIAG.warning("DIAG [__init__] .presence imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .presence: %s", exc, exc_info=True)
+    raise
+
+try:
+    from .room import HiveRoomCoordinator
+    _LOGGER_DIAG.warning("DIAG [__init__] .room imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .room: %s", exc, exc_info=True)
+    raise
+
+try:
+    from .schedule import ScheduleManager
+    _LOGGER_DIAG.warning("DIAG [__init__] .schedule imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .schedule: %s", exc, exc_info=True)
+    raise
+
+try:
+    from .storage import HiveTRVStore
+    _LOGGER_DIAG.warning("DIAG [__init__] .storage imported OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: .storage: %s", exc, exc_info=True)
+    raise
+
+_LOGGER_DIAG.warning("DIAG [__init__] all imports complete")
+
+# CONFIG_SCHEMA tells HA this integration only supports UI configuration
+try:
+    CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+    _LOGGER_DIAG.warning("DIAG [__init__] CONFIG_SCHEMA defined OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: CONFIG_SCHEMA: %s", exc, exc_info=True)
+    raise
+
+# ── Service schemas ─────────────────────────────────────────────────────────
+
+try:
+    _BOOST_SCHEMA = vol.Schema({
+        vol.Required("entity_id"): str,
+        vol.Optional(ATTR_BOOST_TEMPERATURE, default=DEFAULT_BOOST_TEMP): vol.Coerce(float),
+        vol.Optional(ATTR_BOOST_DURATION, default=DEFAULT_BOOST_MINUTES): vol.All(int, vol.Range(min=1, max=1440)),
+    })
+    _END_BOOST_SCHEMA        = vol.Schema({vol.Required("entity_id"): str})
+    _SET_SCHEDULE_SCHEMA     = vol.Schema({
+        vol.Required("entity_id"): str,
+        vol.Required(ATTR_SCHEDULE): [vol.Schema({
+            vol.Required("days"):        [vol.All(int, vol.Range(min=0, max=6))],
+            vol.Required("time"):        str,
+            vol.Required("temperature"): vol.Coerce(float),
+        })],
+    })
+    _CLEAR_SCHEDULE_SCHEMA   = vol.Schema({vol.Required("entity_id"): str})
+    _ADVANCE_SCHEDULE_SCHEMA = vol.Schema({vol.Required("entity_id"): str})
+    _SET_HOLIDAY_SCHEMA      = vol.Schema({
+        vol.Required(ATTR_DEPARTURE): str,
+        vol.Required(ATTR_RETURN):    str,
+    })
+    _CANCEL_HOLIDAY_SCHEMA   = vol.Schema({})
+    _ADD_ROOM_SCHEMA         = vol.Schema({
+        vol.Required(ATTR_ROOM_NAME):                     str,
+        vol.Required(ATTR_ROOM_TRVS):                     [str],
+        vol.Optional(ATTR_ROOM_SENSORS, default=[]):       [str],
+    })
+    _REMOVE_ROOM_SCHEMA      = vol.Schema({vol.Required(ATTR_ROOM_NAME): str})
+    _LOGGER_DIAG.warning("DIAG [__init__] all service schemas defined OK")
+except Exception as exc:
+    _LOGGER_DIAG.error("DIAG [__init__] FAILED: service schema definition: %s", exc, exc_info=True)
+    raise
+
+_LOGGER_DIAG.warning("DIAG [__init__] module load COMPLETE")
 
 
-# ── Integration lifecycle ──────────────────────────────────────────────────────
+# ── Integration lifecycle ────────────────────────────────────────────────────
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Integration setup — runs before any config entry is loaded."""
-    if AwesomeVersion(HA_VERSION) < AwesomeVersion(MIN_HA_VERSION):
-        LOGGER.critical(
-            "Hive Local TRV requires Home Assistant %s or newer. "
-            "You are running %s. Please upgrade.",
-            MIN_HA_VERSION,
-            HA_VERSION,
-        )
+    """Integration setup."""
+    _LOGGER_DIAG.warning("DIAG [async_setup] called — HA_VERSION=%s MIN=%s", HA_VERSION, MIN_HA_VERSION)
+    try:
+        if AwesomeVersion(HA_VERSION) < AwesomeVersion(MIN_HA_VERSION):
+            LOGGER.critical(
+                "Hive Local TRV requires HA %s+, running %s",
+                MIN_HA_VERSION, HA_VERSION,
+            )
+            _LOGGER_DIAG.error("DIAG [async_setup] HA version too old — returning False")
+            return False
+        _LOGGER_DIAG.warning("DIAG [async_setup] version check passed — returning True")
+        return True
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup] EXCEPTION: %s", exc, exc_info=True)
         return False
-    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up from a config entry."""
-    # Read from options first (updated via Configure), fall back to initial data
-    base_topic    = entry.options.get(CONF_Z2M_BASE_TOPIC) or entry.data.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
-    boiler_entity = entry.options.get(CONF_BOILER_ENTITY)  or entry.data.get(CONF_BOILER_ENTITY)
-    person_ids    = entry.options.get(CONF_PERSON_ENTITIES) or entry.data.get(CONF_PERSON_ENTITIES) or []
+    _LOGGER_DIAG.warning(
+        "DIAG [async_setup_entry] called — entry_id=%s domain=%s title=%s",
+        entry.entry_id, entry.domain, entry.title,
+    )
+    _LOGGER_DIAG.warning("DIAG [async_setup_entry] entry.data=%s", dict(entry.data))
+    _LOGGER_DIAG.warning("DIAG [async_setup_entry] entry.options=%s", dict(entry.options))
 
-    store = HiveTRVStore(hass, entry.entry_id)
-    await store.async_load()
+    try:
+        base_topic = (
+            entry.options.get(CONF_Z2M_BASE_TOPIC)
+            or entry.data.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
+        )
+        boiler_entity = (
+            entry.options.get(CONF_BOILER_ENTITY)
+            or entry.data.get(CONF_BOILER_ENTITY)
+        )
+        person_ids = (
+            entry.options.get(CONF_PERSON_ENTITIES)
+            or entry.data.get(CONF_PERSON_ENTITIES)
+            or []
+        )
+        _LOGGER_DIAG.warning(
+            "DIAG [async_setup_entry] resolved — base_topic=%s boiler=%s persons=%s",
+            base_topic, boiler_entity, person_ids,
+        )
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED resolving config: %s", exc, exc_info=True)
+        return False
 
-    hub = HiveTRVHub(hass, base_topic, boiler_entity)
-    await hub.async_setup()
+    try:
+        store = HiveTRVStore(hass, entry.entry_id)
+        await store.async_load()
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] HiveTRVStore loaded OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: HiveTRVStore: %s", exc, exc_info=True)
+        return False
 
-    holiday_mgr  = HolidayManager(hass, store, hub)
-    presence_mgr = PresenceManager(hass, person_ids, hub, holiday_mgr)
+    try:
+        hub = HiveTRVHub(hass, base_topic, boiler_entity)
+        await hub.async_setup()
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] HiveTRVHub setup OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: HiveTRVHub: %s", exc, exc_info=True)
+        return False
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        DATA_HUB:       hub,
-        DATA_STORE:     store,
-        "holiday_mgr":  holiday_mgr,
-        "presence_mgr": presence_mgr,
-    }
+    try:
+        holiday_mgr  = HolidayManager(hass, store, hub)
+        presence_mgr = PresenceManager(hass, person_ids, hub, holiday_mgr)
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] managers created OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: managers: %s", exc, exc_info=True)
+        return False
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+            DATA_HUB:       hub,
+            DATA_STORE:     store,
+            "holiday_mgr":  holiday_mgr,
+            "presence_mgr": presence_mgr,
+        }
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] hass.data stored OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: hass.data: %s", exc, exc_info=True)
+        return False
 
-    # Restore room groups from storage
-    for room_id, room_data in store.get_all_rooms().items():
-        await _create_room_coordinator(hass, entry, hub, store, room_id, room_data)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] platforms forwarded OK: %s", PLATFORMS)
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: platform setup: %s", exc, exc_info=True)
+        return False
 
-    await holiday_mgr.async_setup()
-    await presence_mgr.async_setup()
+    try:
+        for room_id, room_data in store.get_all_rooms().items():
+            _LOGGER_DIAG.warning("DIAG [async_setup_entry] restoring room %s", room_id)
+            await _create_room_coordinator(hass, entry, hub, store, room_id, room_data)
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] rooms restored OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: room restore: %s", exc, exc_info=True)
+        return False
 
-    if not hass.services.has_service(DOMAIN, SERVICE_BOOST):
-        _register_services(hass)
+    try:
+        await holiday_mgr.async_setup()
+        await presence_mgr.async_setup()
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] holiday + presence managers setup OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: manager setup: %s", exc, exc_info=True)
+        return False
+
+    try:
+        if not hass.services.has_service(DOMAIN, SERVICE_BOOST):
+            _register_services(hass)
+        _LOGGER_DIAG.warning("DIAG [async_setup_entry] services registered OK")
+    except Exception as exc:
+        _LOGGER_DIAG.error("DIAG [async_setup_entry] FAILED: services: %s", exc, exc_info=True)
+        return False
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    _LOGGER_DIAG.warning("DIAG [async_setup_entry] COMPLETE — success")
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    _LOGGER_DIAG.warning("DIAG [async_unload_entry] called entry_id=%s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        ed = hass.data[DOMAIN].pop(entry.entry_id)
-        await ed[DATA_HUB].async_unload()
-        await ed["presence_mgr"].async_unload()
+        ed = hass.data[DOMAIN].pop(entry.entry_id, {})
+        if hub := ed.get(DATA_HUB):
+            await hub.async_unload()
+        if pm := ed.get("presence_mgr"):
+            await pm.async_unload()
+    _LOGGER_DIAG.warning("DIAG [async_unload_entry] complete — ok=%s", unload_ok)
     return unload_ok
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload when options change."""
+    _LOGGER_DIAG.warning("DIAG [update_listener] options changed — reloading")
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-# ── Room group helpers ─────────────────────────────────────────────────────────
+# ── Room group helpers ────────────────────────────────────────────────────────
 
 async def _create_room_coordinator(
     hass: HomeAssistant,
@@ -176,10 +330,8 @@ async def _create_room_coordinator(
     )
     await room_coord.async_setup()
     hub.register_room_coordinator(room_id, room_coord)
-
     if room_data.get("schedule"):
         await room_coord.async_set_schedule(room_data["schedule"])
-
     room_coord.async_add_listener(
         lambda: hass.async_create_task(hub.async_evaluate_boiler_demand())
     )
@@ -190,9 +342,10 @@ async def _create_room_coordinator(
     return room_coord
 
 
-# ── Service registration ───────────────────────────────────────────────────────
+# ── Service registration ──────────────────────────────────────────────────────
 
 def _register_services(hass: HomeAssistant) -> None:
+    _LOGGER_DIAG.warning("DIAG [_register_services] registering services")
 
     def _hub_store(entry_id: str | None = None):
         entries = hass.data.get(DOMAIN, {})
@@ -256,14 +409,10 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _advance_schedule(call: ServiceCall) -> None:
         t = _target(call.data["entity_id"])
         if t is None:
-            LOGGER.warning("advance_schedule: entity not found: %s", call.data["entity_id"])
             return
         mgr = getattr(t, "_schedule_mgr", None)
-        if mgr is None:
-            LOGGER.warning("advance_schedule: no schedule active on %s", call.data["entity_id"])
-            return
-        if not await mgr.advance_to_next():
-            LOGGER.info("advance_schedule: no next slot to advance to")
+        if mgr:
+            await mgr.advance_to_next()
 
     async def _set_holiday(call: ServiceCall) -> None:
         hub, store, holiday_mgr, _ = _hub_store()
@@ -324,3 +473,4 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_CANCEL_HOLIDAY,   _cancel_holiday,   _CANCEL_HOLIDAY_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_ADD_ROOM,         _add_room,         _ADD_ROOM_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_REMOVE_ROOM,      _remove_room,      _REMOVE_ROOM_SCHEMA)
+    _LOGGER_DIAG.warning("DIAG [_register_services] all services registered OK")
