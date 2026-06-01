@@ -1,8 +1,9 @@
-"""Config flow — Hive Local TRV.
+"""Config flow for Hive Local TRV.
 
-Initial setup only asks for the Zigbee2MQTT base topic.
-TRVs are discovered automatically once the integration is running.
-Boiler entity and geofencing persons are configured via Options after install.
+Uses the modern SchemaConfigFlowHandler pattern as recommended by
+HA integration quality guidelines. Initial setup is a single field
+(Z2M base topic). All other settings are in the options flow, accessible
+via Configure after installation.
 """
 from __future__ import annotations
 
@@ -10,118 +11,85 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.schema_config_entry_flow import (
+    SchemaConfigFlowHandler,
+    SchemaFlowFormStep,
+    SchemaOptionsFlowHandler,
+)
 
 from .const import (
     CONF_BOILER_ENTITY,
     CONF_PERSON_ENTITIES,
     CONF_Z2M_BASE_TOPIC,
+    CONFIG_VERSION,
     DEFAULT_Z2M_BASE_TOPIC,
     DOMAIN,
 )
 
 
-class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow - one field: the Zigbee2MQTT base topic.
+def _setup_schema(handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler) -> vol.Schema:
+    """Schema for initial setup — Z2M base topic only."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_Z2M_BASE_TOPIC,
+                default=DEFAULT_Z2M_BASE_TOPIC,
+            ): selector.TextSelector(
+                selector.TextSelectorConfig(placeholder="zigbee2mqtt")
+            ),
+        }
+    )
 
-    TRVs are auto-discovered after setup. Use Configure (Settings ->
-    Integrations -> Hive Local TRV -> Configure) to add a boiler entity
-    or geofencing persons at any time.
+
+def _options_schema(handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler) -> vol.Schema:
+    """Schema for options — boiler entity and geofencing persons."""
+    options = handler.options if isinstance(handler.options, dict) else {}
+    current_boiler  = options.get(CONF_BOILER_ENTITY)
+    current_persons = options.get(CONF_PERSON_ENTITIES, [])
+
+    schema: dict = {
+        vol.Optional(
+            CONF_BOILER_ENTITY,
+            description={"suggested_value": current_boiler},
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["climate", "switch", "input_boolean"]
+            )
+        ),
+        vol.Optional(
+            CONF_PERSON_ENTITIES,
+            description={"suggested_value": current_persons},
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="person", multiple=True)
+        ),
+    }
+    return vol.Schema(schema)
+
+
+CONFIG_FLOW: dict[str, SchemaFlowFormStep] = {
+    "user": SchemaFlowFormStep(_setup_schema),
+}
+
+OPTIONS_FLOW: dict[str, SchemaFlowFormStep] = {
+    "init": SchemaFlowFormStep(_options_schema),
+}
+
+
+class HiveLocalTRVConfigFlow(SchemaConfigFlowHandler, domain=DOMAIN):
+    """Config flow for Hive Local TRV.
+
+    SchemaConfigFlowHandler handles async_step_user, unique ID management,
+    and options flow wiring automatically.
     """
 
-    VERSION = 1
+    config_flow  = CONFIG_FLOW
+    options_flow = OPTIONS_FLOW
+    VERSION = CONFIG_VERSION
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Single-step setup: Zigbee2MQTT base topic only."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            base = user_input[CONF_Z2M_BASE_TOPIC].strip().rstrip("/")
-            await self.async_set_unique_id(base)
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title="Hive TRVs",
-                data={
-                    CONF_Z2M_BASE_TOPIC: base,
-                    CONF_BOILER_ENTITY: None,
-                    CONF_PERSON_ENTITIES: [],
-                },
-            )
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_Z2M_BASE_TOPIC, default=DEFAULT_Z2M_BASE_TOPIC
-                    ): selector.TextSelector(
-                        selector.TextSelectorConfig(placeholder="zigbee2mqtt")
-                    ),
-                }
-            ),
-            errors=errors,
-        )
-
-    @staticmethod
     @callback
-    def async_get_options_flow(
-        entry: config_entries.ConfigEntry,
-    ) -> "HiveLocalTRVOptionsFlow":
-        """Return the options flow."""
-        return HiveLocalTRVOptionsFlow(entry)
-
-
-class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
-    """Options flow - add/change boiler entity and geofencing persons."""
-
-    def __init__(self, entry: config_entries.ConfigEntry) -> None:
-        """Initialise."""
-        self._entry = entry
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Show the options form."""
-        if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_BOILER_ENTITY: user_input.get(CONF_BOILER_ENTITY) or None,
-                    CONF_PERSON_ENTITIES: user_input.get(CONF_PERSON_ENTITIES) or [],
-                },
-            )
-
-        current_boiler = self._entry.options.get(
-            CONF_BOILER_ENTITY, self._entry.data.get(CONF_BOILER_ENTITY)
-        )
-        current_persons = self._entry.options.get(
-            CONF_PERSON_ENTITIES, self._entry.data.get(CONF_PERSON_ENTITIES, [])
-        )
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_BOILER_ENTITY,
-                        description={"suggested_value": current_boiler},
-                    ): selector.EntitySelector(
-                        selector.EntitySelectorConfig(
-                            domain=["climate", "switch", "input_boolean"]
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_PERSON_ENTITIES,
-                        description={"suggested_value": current_persons},
-                    ): selector.EntitySelector(
-                        selector.EntitySelectorConfig(
-                            domain="person", multiple=True
-                        )
-                    ),
-                }
-            ),
-        )
+    def async_config_entry_title(self, options: dict[str, Any]) -> str:
+        """Title for the config entry."""
+        base = options.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
+        return f"Hive TRVs ({base})"
