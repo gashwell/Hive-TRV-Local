@@ -1,43 +1,31 @@
-"""Config flow for Hive Local TRV — DIAGNOSTIC BUILD.
+"""Config flow for Hive Local TRV.
 
-Every step is wrapped in try/except and logged at WARNING level
-so it appears in the HA log regardless of log level settings.
-Check Settings → System → Logs after attempting to add the integration.
+Uses plain ConfigFlow — no helper classes that vary between HA versions.
+DIAG logging uses raw stdlib logging so output appears regardless of
+HA log configuration. Search for 'HIVE_DIAG' in Settings → System → Logs.
 """
 from __future__ import annotations
 
+# Use raw stdlib logging first — guaranteed available before any HA import
 import logging
-from typing import Any
-
-import voluptuous as vol
-
-_LOGGER = logging.getLogger(__name__)
-
-_LOGGER.warning("DIAG [config_flow] module load started")
+_L = logging.getLogger("custom_components.hive_local_trv.config_flow")
+_L.warning("HIVE_DIAG config_flow: module import started")
 
 try:
+    from typing import Any
+    import voluptuous as vol
+    _L.warning("HIVE_DIAG config_flow: stdlib + voluptuous OK")
+except Exception as _e:
+    _L.error("HIVE_DIAG config_flow: stdlib import FAILED: %s", _e)
+    raise
+
+try:
+    from homeassistant import config_entries
     from homeassistant.core import callback
-    _LOGGER.warning("DIAG [config_flow] homeassistant.core imported OK")
-except Exception as exc:
-    _LOGGER.error("DIAG [config_flow] FAILED to import homeassistant.core: %s", exc)
-    raise
-
-try:
     from homeassistant.helpers import selector
-    _LOGGER.warning("DIAG [config_flow] homeassistant.helpers.selector imported OK")
-except Exception as exc:
-    _LOGGER.error("DIAG [config_flow] FAILED to import selector: %s", exc)
-    raise
-
-try:
-    from homeassistant.helpers.schema_config_entry_flow import (
-        SchemaConfigFlowHandler,
-        SchemaFlowFormStep,
-        SchemaOptionsFlowHandler,
-    )
-    _LOGGER.warning("DIAG [config_flow] SchemaConfigFlowHandler imported OK")
-except Exception as exc:
-    _LOGGER.error("DIAG [config_flow] FAILED to import SchemaConfigFlowHandler: %s", exc)
+    _L.warning("HIVE_DIAG config_flow: homeassistant imports OK")
+except Exception as _e:
+    _L.error("HIVE_DIAG config_flow: homeassistant import FAILED: %s", _e, exc_info=True)
     raise
 
 try:
@@ -49,109 +37,141 @@ try:
         DEFAULT_Z2M_BASE_TOPIC,
         DOMAIN,
     )
-    _LOGGER.warning(
-        "DIAG [config_flow] .const imported OK — DOMAIN=%s CONFIG_VERSION=%s",
+    _L.warning(
+        "HIVE_DIAG config_flow: const OK — DOMAIN=%s VERSION=%s",
         DOMAIN, CONFIG_VERSION,
     )
-except Exception as exc:
-    _LOGGER.error("DIAG [config_flow] FAILED to import from .const: %s", exc)
+except Exception as _e:
+    _L.error("HIVE_DIAG config_flow: const import FAILED: %s", _e, exc_info=True)
     raise
 
-_LOGGER.warning("DIAG [config_flow] all imports complete, defining schema functions")
+_L.warning("HIVE_DIAG config_flow: all imports done, defining flow class")
 
 
-def _setup_schema(handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler) -> vol.Schema:
-    """Schema for initial setup step."""
-    _LOGGER.warning("DIAG [config_flow] _setup_schema called — handler type: %s", type(handler).__name__)
-    try:
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_Z2M_BASE_TOPIC,
-                    default=DEFAULT_Z2M_BASE_TOPIC,
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(placeholder="zigbee2mqtt")
-                ),
-            }
-        )
-        _LOGGER.warning("DIAG [config_flow] _setup_schema built successfully")
-        return schema
-    except Exception as exc:
-        _LOGGER.error("DIAG [config_flow] _setup_schema FAILED: %s", exc, exc_info=True)
-        raise
+class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Config flow — single step: Z2M base topic only.
 
+    Everything else (boiler entity, geofencing) is in the options flow,
+    accessible via Configure after the integration is installed.
+    """
 
-def _options_schema(handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler) -> vol.Schema:
-    """Schema for options flow."""
-    _LOGGER.warning("DIAG [config_flow] _options_schema called — handler type: %s", type(handler).__name__)
-    try:
-        options = handler.options if isinstance(handler.options, dict) else {}
-        _LOGGER.warning("DIAG [config_flow] options data: %s", options)
-
-        current_boiler  = options.get(CONF_BOILER_ENTITY)
-        current_persons = options.get(CONF_PERSON_ENTITIES, [])
-
-        schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_BOILER_ENTITY,
-                    description={"suggested_value": current_boiler},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["climate", "switch", "input_boolean"]
-                    )
-                ),
-                vol.Optional(
-                    CONF_PERSON_ENTITIES,
-                    description={"suggested_value": current_persons},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="person", multiple=True)
-                ),
-            }
-        )
-        _LOGGER.warning("DIAG [config_flow] _options_schema built successfully")
-        return schema
-    except Exception as exc:
-        _LOGGER.error("DIAG [config_flow] _options_schema FAILED: %s", exc, exc_info=True)
-        raise
-
-
-_LOGGER.warning("DIAG [config_flow] defining CONFIG_FLOW and OPTIONS_FLOW dicts")
-
-CONFIG_FLOW: dict[str, SchemaFlowFormStep] = {
-    "user": SchemaFlowFormStep(_setup_schema),
-}
-
-OPTIONS_FLOW: dict[str, SchemaFlowFormStep] = {
-    "init": SchemaFlowFormStep(_options_schema),
-}
-
-_LOGGER.warning("DIAG [config_flow] defining HiveLocalTRVConfigFlow class")
-
-
-class HiveLocalTRVConfigFlow(SchemaConfigFlowHandler, domain=DOMAIN):
-    """Config flow for Hive Local TRV — DIAGNOSTIC BUILD."""
-
-    config_flow  = CONFIG_FLOW
-    options_flow = OPTIONS_FLOW
     VERSION = CONFIG_VERSION
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        _LOGGER.warning("DIAG [config_flow] __init_subclass__ called for %s", cls.__name__)
-        super().__init_subclass__(**kwargs)
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Show setup form or process submission."""
+        _L.warning("HIVE_DIAG async_step_user called — user_input=%s", user_input)
+        errors: dict[str, str] = {}
 
-    @callback
-    def async_config_entry_title(self, options: dict[str, Any]) -> str:
-        """Title for the config entry."""
-        _LOGGER.warning("DIAG [config_flow] async_config_entry_title called — options: %s", options)
+        if user_input is not None:
+            _L.warning("HIVE_DIAG async_step_user: processing submission")
+            try:
+                base = user_input[CONF_Z2M_BASE_TOPIC].strip().rstrip("/")
+                _L.warning("HIVE_DIAG async_step_user: base_topic=%s", base)
+                await self.async_set_unique_id(base)
+                self._abort_if_unique_id_configured()
+                _L.warning("HIVE_DIAG async_step_user: unique ID set OK, creating entry")
+                return self.async_create_entry(
+                    title="Hive TRVs",
+                    data={
+                        CONF_Z2M_BASE_TOPIC: base,
+                        CONF_BOILER_ENTITY: None,
+                        CONF_PERSON_ENTITIES: [],
+                    },
+                )
+            except Exception as exc:
+                _L.error("HIVE_DIAG async_step_user: FAILED: %s", exc, exc_info=True)
+                errors["base"] = "unknown"
+
+        _L.warning("HIVE_DIAG async_step_user: building form")
         try:
-            base = options.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
-            title = f"Hive TRVs ({base})"
-            _LOGGER.warning("DIAG [config_flow] title will be: %s", title)
-            return title
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_Z2M_BASE_TOPIC,
+                        default=DEFAULT_Z2M_BASE_TOPIC,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(placeholder="zigbee2mqtt")
+                    ),
+                }
+            )
+            _L.warning("HIVE_DIAG async_step_user: schema built OK, showing form")
+            return self.async_show_form(
+                step_id="user",
+                data_schema=schema,
+                errors=errors,
+            )
         except Exception as exc:
-            _LOGGER.error("DIAG [config_flow] async_config_entry_title FAILED: %s", exc, exc_info=True)
-            return "Hive TRVs"
+            _L.error("HIVE_DIAG async_step_user: form build FAILED: %s", exc, exc_info=True)
+            raise
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "HiveLocalTRVOptionsFlow":
+        """Return the options flow handler."""
+        _L.warning("HIVE_DIAG async_get_options_flow called")
+        return HiveLocalTRVOptionsFlow()
 
 
-_LOGGER.warning("DIAG [config_flow] module load COMPLETE — HiveLocalTRVConfigFlow defined")
+class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
+    """Options flow — boiler entity and geofencing.
+
+    Uses self.config_entry (set automatically by HA in 2024.x+).
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Show options form or save."""
+        _L.warning("HIVE_DIAG options async_step_init called — user_input=%s", user_input)
+
+        if user_input is not None:
+            _L.warning("HIVE_DIAG options: saving")
+            return self.async_create_entry(
+                title="",
+                data={
+                    CONF_BOILER_ENTITY: user_input.get(CONF_BOILER_ENTITY) or None,
+                    CONF_PERSON_ENTITIES: user_input.get(CONF_PERSON_ENTITIES) or [],
+                },
+            )
+
+        try:
+            entry = self.config_entry
+            current_boiler  = entry.options.get(CONF_BOILER_ENTITY)  or entry.data.get(CONF_BOILER_ENTITY)
+            current_persons = entry.options.get(CONF_PERSON_ENTITIES) or entry.data.get(CONF_PERSON_ENTITIES, [])
+            _L.warning(
+                "HIVE_DIAG options: current boiler=%s persons=%s",
+                current_boiler, current_persons,
+            )
+        except Exception as exc:
+            _L.error("HIVE_DIAG options: FAILED reading config_entry: %s", exc, exc_info=True)
+            current_boiler  = None
+            current_persons = []
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_BOILER_ENTITY,
+                        description={"suggested_value": current_boiler},
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain=["climate", "switch", "input_boolean"]
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_PERSON_ENTITIES,
+                        description={"suggested_value": current_persons},
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="person", multiple=True)
+                    ),
+                }
+            ),
+        )
+
+
+_L.warning("HIVE_DIAG config_flow: module load COMPLETE")
