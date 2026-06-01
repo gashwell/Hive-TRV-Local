@@ -8,9 +8,13 @@ from typing import Any
 
 import voluptuous as vol
 
+from awesomeversion.awesomeversion import AwesomeVersion
+
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ATTR_BOOST_DURATION,
@@ -29,6 +33,8 @@ from .const import (
     DEFAULT_BOOST_MINUTES,
     DEFAULT_BOOST_TEMP,
     DOMAIN,
+    LOGGER,
+    MIN_HA_VERSION,
     PLATFORMS,
     SERVICE_ADVANCE_SCHEDULE,
     SERVICE_ADD_ROOM,
@@ -47,48 +53,61 @@ from .room import HiveRoomCoordinator
 from .schedule import ScheduleManager
 from .storage import HiveTRVStore
 
-_LOGGER = logging.getLogger(__name__)
+# Tell HA this integration only supports UI configuration — no YAML setup
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-# ── Service schemas ───────────────────────────────────────────────────────────
+# ── Service schemas ────────────────────────────────────────────────────────────
 
 _BOOST_SCHEMA = vol.Schema({
-    vol.Required("entity_id"): cv.entity_id,
+    vol.Required("entity_id"): str,
     vol.Optional(ATTR_BOOST_TEMPERATURE, default=DEFAULT_BOOST_TEMP): vol.Coerce(float),
     vol.Optional(ATTR_BOOST_DURATION, default=DEFAULT_BOOST_MINUTES): vol.All(int, vol.Range(min=1, max=1440)),
 })
-_END_BOOST_SCHEMA = vol.Schema({vol.Required("entity_id"): cv.entity_id})
-
-_SET_SCHEDULE_SCHEMA = vol.Schema({
-    vol.Required("entity_id"): cv.entity_id,
+_END_BOOST_SCHEMA         = vol.Schema({vol.Required("entity_id"): str})
+_SET_SCHEDULE_SCHEMA      = vol.Schema({
+    vol.Required("entity_id"): str,
     vol.Required(ATTR_SCHEDULE): [vol.Schema({
         vol.Required("days"):        [vol.All(int, vol.Range(min=0, max=6))],
         vol.Required("time"):        str,
         vol.Required("temperature"): vol.Coerce(float),
     })],
 })
-_CLEAR_SCHEDULE_SCHEMA  = vol.Schema({vol.Required("entity_id"): cv.entity_id})
-_ADVANCE_SCHEDULE_SCHEMA = vol.Schema({vol.Required("entity_id"): cv.entity_id})
-
-_SET_HOLIDAY_SCHEMA = vol.Schema({
-    vol.Required(ATTR_DEPARTURE): str,   # ISO datetime string
+_CLEAR_SCHEDULE_SCHEMA    = vol.Schema({vol.Required("entity_id"): str})
+_ADVANCE_SCHEDULE_SCHEMA  = vol.Schema({vol.Required("entity_id"): str})
+_SET_HOLIDAY_SCHEMA       = vol.Schema({
+    vol.Required(ATTR_DEPARTURE): str,
     vol.Required(ATTR_RETURN):    str,
 })
-_CANCEL_HOLIDAY_SCHEMA = vol.Schema({})
-
-_ADD_ROOM_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ROOM_NAME):    str,
-    vol.Required(ATTR_ROOM_TRVS):    [str],
-    vol.Optional(ATTR_ROOM_SENSORS, default=[]): [cv.entity_id],
+_CANCEL_HOLIDAY_SCHEMA    = vol.Schema({})
+_ADD_ROOM_SCHEMA          = vol.Schema({
+    vol.Required(ATTR_ROOM_NAME):                      str,
+    vol.Required(ATTR_ROOM_TRVS):                      [str],
+    vol.Optional(ATTR_ROOM_SENSORS, default=[]):        [str],
 })
-_REMOVE_ROOM_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_NAME): str})
+_REMOVE_ROOM_SCHEMA       = vol.Schema({vol.Required(ATTR_ROOM_NAME): str})
 
 
-# ── Setup ─────────────────────────────────────────────────────────────────────
+# ── Integration lifecycle ──────────────────────────────────────────────────────
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Integration setup — runs before any config entry is loaded."""
+    if AwesomeVersion(HA_VERSION) < AwesomeVersion(MIN_HA_VERSION):
+        LOGGER.critical(
+            "Hive Local TRV requires Home Assistant %s or newer. "
+            "You are running %s. Please upgrade.",
+            MIN_HA_VERSION,
+            HA_VERSION,
+        )
+        return False
+    return True
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    base_topic    = entry.data[CONF_Z2M_BASE_TOPIC]
-    boiler_entity = entry.data.get(CONF_BOILER_ENTITY)
-    person_ids    = entry.data.get(CONF_PERSON_ENTITIES) or []
+    """Set up from a config entry."""
+    # Read from options first (updated via Configure), fall back to initial data
+    base_topic    = entry.options.get(CONF_Z2M_BASE_TOPIC) or entry.data.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
+    boiler_entity = entry.options.get(CONF_BOILER_ENTITY)  or entry.data.get(CONF_BOILER_ENTITY)
+    person_ids    = entry.options.get(CONF_PERSON_ENTITIES) or entry.data.get(CONF_PERSON_ENTITIES) or []
 
     store = HiveTRVStore(hass, entry.entry_id)
     await store.async_load()
@@ -96,7 +115,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub = HiveTRVHub(hass, base_topic, boiler_entity)
     await hub.async_setup()
 
-    holiday_mgr = HolidayManager(hass, store, hub)
+    holiday_mgr  = HolidayManager(hass, store, hub)
     presence_mgr = PresenceManager(hass, person_ids, hub, holiday_mgr)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
@@ -112,7 +131,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for room_id, room_data in store.get_all_rooms().items():
         await _create_room_coordinator(hass, entry, hub, store, room_id, room_data)
 
-    # Setup holiday and presence managers (after rooms are restored)
     await holiday_mgr.async_setup()
     await presence_mgr.async_setup()
 
@@ -124,6 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         ed = hass.data[DOMAIN].pop(entry.entry_id)
@@ -133,13 +152,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-# ── Room group helpers ────────────────────────────────────────────────────────
+# ── Room group helpers ─────────────────────────────────────────────────────────
 
 async def _create_room_coordinator(
-    hass, entry, hub, store, room_id, room_data
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    hub: HiveTRVHub,
+    store: HiveTRVStore,
+    room_id: str,
+    room_data: dict,
 ) -> HiveRoomCoordinator:
     room_coord = HiveRoomCoordinator(
         hass,
@@ -165,7 +190,7 @@ async def _create_room_coordinator(
     return room_coord
 
 
-# ── Service registration ──────────────────────────────────────────────────────
+# ── Service registration ───────────────────────────────────────────────────────
 
 def _register_services(hass: HomeAssistant) -> None:
 
@@ -231,34 +256,30 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _advance_schedule(call: ServiceCall) -> None:
         t = _target(call.data["entity_id"])
         if t is None:
-            _LOGGER.warning("advance_schedule: entity not found: %s", call.data["entity_id"])
+            LOGGER.warning("advance_schedule: entity not found: %s", call.data["entity_id"])
             return
-        # Both TRV coordinators and room coordinators expose a schedule manager
         mgr = getattr(t, "_schedule_mgr", None)
         if mgr is None:
-            _LOGGER.warning("advance_schedule: no schedule manager on %s", call.data["entity_id"])
+            LOGGER.warning("advance_schedule: no schedule active on %s", call.data["entity_id"])
             return
-        advanced = await mgr.advance_to_next()
-        if not advanced:
-            _LOGGER.info("advance_schedule: no next slot to advance to")
+        if not await mgr.advance_to_next():
+            LOGGER.info("advance_schedule: no next slot to advance to")
 
     async def _set_holiday(call: ServiceCall) -> None:
         hub, store, holiday_mgr, _ = _hub_store()
         if not holiday_mgr:
             return
-        try:
-            dep = datetime.fromisoformat(call.data[ATTR_DEPARTURE])
-            ret = datetime.fromisoformat(call.data[ATTR_RETURN])
-        except (ValueError, KeyError) as exc:
-            _LOGGER.error("set_holiday: invalid datetime: %s", exc)
-            return
         import homeassistant.util.dt as dt_util
-        dep = dt_util.as_utc(dep)
-        ret = dt_util.as_utc(ret)
+        try:
+            dep = dt_util.as_utc(datetime.fromisoformat(call.data[ATTR_DEPARTURE]))
+            ret = dt_util.as_utc(datetime.fromisoformat(call.data[ATTR_RETURN]))
+        except (ValueError, KeyError) as exc:
+            LOGGER.error("set_holiday: invalid datetime: %s", exc)
+            return
         await holiday_mgr.async_set_holiday(dep, ret)
 
     async def _cancel_holiday(call: ServiceCall) -> None:
-        hub, store, holiday_mgr, _ = _hub_store()
+        _, _, holiday_mgr, _ = _hub_store()
         if holiday_mgr:
             await holiday_mgr.async_cancel_holiday()
 
