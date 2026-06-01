@@ -11,7 +11,6 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components import mqtt
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
@@ -25,11 +24,11 @@ from .const import (
 
 
 class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow — minimal single step: just the Z2M base topic.
+    """Config flow - one field: the Zigbee2MQTT base topic.
 
-    TRVs are auto-discovered after setup. Use the Configure button
-    (Settings → Integrations → Hive Local TRV → Configure) to add
-    a boiler entity or geofencing persons at any time.
+    TRVs are auto-discovered after setup. Use Configure (Settings ->
+    Integrations -> Hive Local TRV -> Configure) to add a boiler entity
+    or geofencing persons at any time.
     """
 
     VERSION = 1
@@ -41,20 +40,17 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if not mqtt.async_get_mqtt_data(self.hass):
-                errors["base"] = "mqtt_unavailable"
-            else:
-                base = user_input[CONF_Z2M_BASE_TOPIC].strip().rstrip("/")
-                await self.async_set_unique_id(base)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title="Hive TRVs",
-                    data={
-                        CONF_Z2M_BASE_TOPIC: base,
-                        CONF_BOILER_ENTITY: None,
-                        CONF_PERSON_ENTITIES: [],
-                    },
-                )
+            base = user_input[CONF_Z2M_BASE_TOPIC].strip().rstrip("/")
+            await self.async_set_unique_id(base)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title="Hive TRVs",
+                data={
+                    CONF_Z2M_BASE_TOPIC: base,
+                    CONF_BOILER_ENTITY: None,
+                    CONF_PERSON_ENTITIES: [],
+                },
+            )
 
         return self.async_show_form(
             step_id="user",
@@ -67,12 +63,6 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                 }
             ),
-            description_placeholders={
-                "note": (
-                    "TRVs are discovered automatically. "
-                    "Use Configure to add a boiler entity or geofencing after install."
-                )
-            },
             errors=errors,
         )
 
@@ -80,13 +70,13 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         entry: config_entries.ConfigEntry,
-    ) -> HiveLocalTRVOptionsFlow:
+    ) -> "HiveLocalTRVOptionsFlow":
         """Return the options flow."""
         return HiveLocalTRVOptionsFlow(entry)
 
 
 class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — add/change boiler entity and geofencing persons."""
+    """Options flow - add/change boiler entity and geofencing persons."""
 
     def __init__(self, entry: config_entries.ConfigEntry) -> None:
         """Initialise."""
@@ -105,7 +95,6 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                 },
             )
 
-        # Prefer options values (re-configure), fall back to original data
         current_boiler = self._entry.options.get(
             CONF_BOILER_ENTITY, self._entry.data.get(CONF_BOILER_ENTITY)
         )
