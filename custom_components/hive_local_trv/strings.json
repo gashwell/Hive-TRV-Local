@@ -12,9 +12,6 @@
         }
       }
     },
-    "error": {
-      "mqtt_unavailable": "MQTT integration is not configured in Home Assistant."
-    },
     "abort": {
       "already_configured": "This Zigbee2MQTT instance is already configured."
     }
