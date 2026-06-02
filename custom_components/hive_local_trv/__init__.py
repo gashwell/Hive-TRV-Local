@@ -1,4 +1,4 @@
-"""Hive Local TRV integration — v1.0.1."""
+"""Hive Local TRV integration — v1.0.3."""
 from __future__ import annotations
 
 import logging
@@ -45,6 +45,7 @@ try:
         DEFAULT_BOOST_MINUTES,
         DEFAULT_BOOST_TEMP,
         DEFAULT_ENABLE_DIAGNOSTICS,
+        DEFAULT_Z2M_BASE_TOPIC,
         DOMAIN,
         LOGGER,
         MIN_HA_VERSION,
@@ -89,15 +90,27 @@ except Exception as _e:
     _L.error("HIVE_DIAG __init__: CONFIG_SCHEMA FAILED: %s", _e, exc_info=True)
     raise
 
-# ── Helper — emit DIAG log only when diagnostics are enabled ───────────────────
+# ── Canonical entry data schema ────────────────────────────────────────────────
+# Every field that async_setup_entry reads must have a default here.
+# When a new field is added in a future release, add it here with its default.
+# async_migrate_entry will backfill it for existing installs on first restart.
+_ENTRY_DEFAULTS: dict[str, Any] = {
+    CONF_Z2M_BASE_TOPIC:   DEFAULT_Z2M_BASE_TOPIC,
+    CONF_BOILER_ENTITY:    None,
+    CONF_PERSON_ENTITIES:  [],
+    CONF_ENABLE_DIAGNOSTICS: DEFAULT_ENABLE_DIAGNOSTICS,
+}
+
+_CURRENT_SCHEMA_VERSION = 1
+
+
+# ── Diagnostic helper ──────────────────────────────────────────────────────────
 
 def _diag(entry: ConfigEntry, msg: str, *args) -> None:
-    """Log a HIVE_DIAG message only when the diagnostics option is enabled."""
-    enabled = (
-        entry.options.get(CONF_ENABLE_DIAGNOSTICS)
-        if entry.options.get(CONF_ENABLE_DIAGNOSTICS) is not None
-        else entry.data.get(CONF_ENABLE_DIAGNOSTICS, DEFAULT_ENABLE_DIAGNOSTICS)
-    )
+    """Log a HIVE_DIAG message only when diagnostics are enabled."""
+    opts = entry.options if entry.options else {}
+    data = entry.data if entry.data else {}
+    enabled = opts.get(CONF_ENABLE_DIAGNOSTICS, data.get(CONF_ENABLE_DIAGNOSTICS, DEFAULT_ENABLE_DIAGNOSTICS))
     if enabled:
         _L.warning("HIVE_DIAG " + msg, *args)
 
@@ -148,24 +161,50 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Hive TRV from a config entry."""
-    _diag(entry, "async_setup_entry: entry_id=%s data=%s options=%s",
-          entry.entry_id, dict(entry.data), dict(entry.options))
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entry data to the current schema.
 
-    base_topic = (
-        entry.options.get(CONF_Z2M_BASE_TOPIC)
-        or entry.data.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
-    )
-    boiler_entity = (
-        entry.options.get(CONF_BOILER_ENTITY)
-        or entry.data.get(CONF_BOILER_ENTITY)
-    )
-    person_ids = (
-        entry.options.get(CONF_PERSON_ENTITIES)
-        or entry.data.get(CONF_PERSON_ENTITIES)
-        or []
-    )
+    Called automatically by HA when entry.version < CONFIG_VERSION (the
+    VERSION set on the ConfigFlow class).
+
+    Also used to backfill any fields missing from entries created by older
+    versions of the integration that ran at schema version 1.
+    """
+    current = entry.version
+    _L.warning("HIVE_DIAG async_migrate_entry: migrating from v%s -> v%s", current, _CURRENT_SCHEMA_VERSION)
+
+    new_data = {**_ENTRY_DEFAULTS, **entry.data}
+
+    # Future version bumps go here as elif blocks, e.g.:
+    # if current < 2:
+    #     new_data["new_field_added_in_v2"] = "default_value"
+
+    hass.config_entries.async_update_entry(entry, data=new_data, version=_CURRENT_SCHEMA_VERSION)
+    _L.warning("HIVE_DIAG async_migrate_entry: complete — data now has keys: %s", list(new_data.keys()))
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Hive TRV from a config entry.
+
+    Reads configuration defensively — every field has a fallback so an
+    existing install loads correctly after a HACS update without reinstalling.
+    """
+    # Merge entry data over defaults so no field access can ever KeyError
+    effective_data = {**_ENTRY_DEFAULTS, **entry.data}
+
+    _diag(entry, "async_setup_entry: entry_id=%s data=%s options=%s",
+          entry.entry_id, effective_data, dict(entry.options))
+
+    # Prefer options (set via Configure) over original data, then defaults
+    def _get(key: str) -> Any:
+        opts = entry.options or {}
+        return opts[key] if key in opts else effective_data.get(key, _ENTRY_DEFAULTS.get(key))
+
+    base_topic    = _get(CONF_Z2M_BASE_TOPIC) or DEFAULT_Z2M_BASE_TOPIC
+    boiler_entity = _get(CONF_BOILER_ENTITY)
+    person_ids    = _get(CONF_PERSON_ENTITIES) or []
+
     _diag(entry, "async_setup_entry: base=%s boiler=%s persons=%s",
           base_topic, boiler_entity, person_ids)
 
@@ -229,6 +268,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload when options change via Configure."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
