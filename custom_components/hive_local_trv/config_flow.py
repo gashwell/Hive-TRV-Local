@@ -20,9 +20,11 @@ except Exception as exc:
 try:
     from .const import (
         CONF_BOILER_ENTITY,
+        CONF_ENABLE_DIAGNOSTICS,
         CONF_PERSON_ENTITIES,
         CONF_Z2M_BASE_TOPIC,
         CONFIG_VERSION,
+        DEFAULT_ENABLE_DIAGNOSTICS,
         DEFAULT_Z2M_BASE_TOPIC,
         DOMAIN,
     )
@@ -35,7 +37,11 @@ _L.warning("HIVE_DIAG config_flow: defining flow class")
 
 
 class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow — single step: Z2M base topic only."""
+    """Config flow — single step: Z2M base topic only.
+
+    Everything else (boiler entity, geofencing, diagnostics) is in
+    the options flow via Settings → Integrations → Configure.
+    """
 
     VERSION = CONFIG_VERSION
 
@@ -58,6 +64,7 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_Z2M_BASE_TOPIC: base,
                         CONF_BOILER_ENTITY: None,
                         CONF_PERSON_ENTITIES: [],
+                        CONF_ENABLE_DIAGNOSTICS: DEFAULT_ENABLE_DIAGNOSTICS,
                     },
                 )
             except Exception as exc:
@@ -95,7 +102,7 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — boiler entity and geofencing."""
+    """Options flow — boiler entity, geofencing, and diagnostics toggle."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -104,11 +111,15 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
         _L.warning("HIVE_DIAG options async_step_init — user_input=%s", user_input)
 
         if user_input is not None:
+            _L.warning("HIVE_DIAG options: saving — diagnostics=%s",
+                        user_input.get(CONF_ENABLE_DIAGNOSTICS, DEFAULT_ENABLE_DIAGNOSTICS))
             return self.async_create_entry(
                 title="",
                 data={
                     CONF_BOILER_ENTITY: user_input.get(CONF_BOILER_ENTITY) or None,
                     CONF_PERSON_ENTITIES: user_input.get(CONF_PERSON_ENTITIES) or [],
+                    CONF_ENABLE_DIAGNOSTICS: user_input.get(CONF_ENABLE_DIAGNOSTICS,
+                                                             DEFAULT_ENABLE_DIAGNOSTICS),
                 },
             )
 
@@ -116,10 +127,15 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
             entry = self.config_entry
             current_boiler  = entry.options.get(CONF_BOILER_ENTITY)  or entry.data.get(CONF_BOILER_ENTITY)
             current_persons = entry.options.get(CONF_PERSON_ENTITIES) or entry.data.get(CONF_PERSON_ENTITIES, [])
+            current_diag    = entry.options.get(CONF_ENABLE_DIAGNOSTICS,
+                              entry.data.get(CONF_ENABLE_DIAGNOSTICS, DEFAULT_ENABLE_DIAGNOSTICS))
+            _L.warning("HIVE_DIAG options: current boiler=%s persons=%s diag=%s",
+                        current_boiler, current_persons, current_diag)
         except Exception as exc:
             _L.error("HIVE_DIAG options: reading config_entry FAILED: %s", exc, exc_info=True)
             current_boiler  = None
             current_persons = []
+            current_diag    = DEFAULT_ENABLE_DIAGNOSTICS
 
         return self.async_show_form(
             step_id="init",
@@ -139,6 +155,10 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="person", multiple=True)
                     ),
+                    vol.Optional(
+                        CONF_ENABLE_DIAGNOSTICS,
+                        default=current_diag,
+                    ): selector.BooleanSelector(),
                 }
             ),
         )
