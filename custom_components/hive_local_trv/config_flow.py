@@ -47,7 +47,6 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Show setup form or process submission."""
-        _L.warning("HIVE_DIAG async_step_user called — user_input=%s", user_input)
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -99,6 +98,44 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
         self._new_trv_names: list[str] = []
         self._new_temp_sensors: list[str] = []
 
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _get_store_and_hub(self):
+        """Return (store, hub) from hass.data if loaded."""
+        ed = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        return ed.get(DATA_STORE), ed.get(DATA_HUB)
+
+    def _get_room_names(self) -> list[str]:
+        """Return sorted list of existing room names."""
+        store, _ = self._get_store_and_hub()
+        if not store:
+            return []
+        return sorted(rd.get("name", rid) for rid, rd in store.get_all_rooms().items())
+
+    def _get_all_trv_names(self) -> list[str]:
+        """All TRV and thermostat friendly names known to the hub."""
+        _, hub = self._get_store_and_hub()
+        if not hub:
+            return []
+        # hub.coordinators is keyed by Z2M friendly name
+        return sorted(hub.coordinators.keys())
+
+    def _get_grouped_trv_names(self) -> set[str]:
+        """TRV friendly names that are already assigned to a room group."""
+        store, _ = self._get_store_and_hub()
+        if not store:
+            return set()
+        grouped: set[str] = set()
+        for room_data in store.get_all_rooms().values():
+            grouped.update(room_data.get("trvs", []))
+        return grouped
+
+    def _get_available_trv_names(self) -> list[str]:
+        """TRVs not yet in any group — available for a new room."""
+        all_trvs = self._get_all_trv_names()
+        grouped  = self._get_grouped_trv_names()
+        return [t for t in all_trvs if t not in grouped]
+
     # ── Top-level menu ─────────────────────────────────────────────────────────
 
     async def async_step_init(
@@ -109,7 +146,7 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             menu_options={
                 "settings": "Device settings",
-                "rooms": "Manage room groups",
+                "rooms":    "Manage room groups",
             },
         )
 
@@ -133,8 +170,8 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
             )
 
         entry = self.config_entry
-        opts = entry.options
-        data = entry.data
+        opts  = entry.options
+        data  = entry.data
 
         return self.async_show_form(
             step_id="settings",
@@ -162,62 +199,108 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
-    # ── Room group management menu ─────────────────────────────────────────────
+    # ── Room management menu ───────────────────────────────────────────────────
 
     async def async_step_rooms(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Room management sub-menu."""
-        # Check if any rooms exist so we only show Remove when relevant
+        options: dict[str, str] = {}
+
+        available = self._get_available_trv_names()
+        if available:
+            options["add_room"] = "Add a room group"
+
         existing = self._get_room_names()
-        options: dict[str, str] = {"add_room": "Add a room group"}
         if existing:
             options["remove_room"] = "Remove a room group"
 
+        if not options:
+            # No TRVs discovered yet and no rooms — show an informational form
+            return self.async_show_form(
+                step_id="rooms",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "status": "No TRVs have been discovered yet. "
+                              "Wait for Zigbee2MQTT to publish device data and try again."
+                },
+            )
+
         return self.async_show_menu(step_id="rooms", menu_options=options)
 
-    # ── Add room ───────────────────────────────────────────────────────────────
+    # ── Add room — step 1: name ────────────────────────────────────────────────
 
     async def async_step_add_room(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Step 1 of 2 — room name and TRV friendly names."""
+        """Step 1 — room name."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             name = user_input.get("room_name", "").strip()
-            raw_trvs = user_input.get("trv_names", "").strip()
-
             if not name:
                 errors["room_name"] = "required"
-            elif not raw_trvs:
-                errors["trv_names"] = "required"
             else:
-                # Parse comma-separated TRV names
                 self._new_room_name = name
-                self._new_trv_names = [t.strip() for t in raw_trvs.split(",") if t.strip()]
-                return await self.async_step_add_room_sensors()
+                return await self.async_step_add_room_trvs()
 
         return self.async_show_form(
             step_id="add_room",
             data_schema=vol.Schema(
                 {
                     vol.Required("room_name"): selector.TextSelector(),
-                    vol.Required("trv_names"): selector.TextSelector(
-                        selector.TextSelectorConfig(multiline=False)
+                }
+            ),
+            errors=errors,
+        )
+
+    # ── Add room — step 2: TRV selection ──────────────────────────────────────
+
+    async def async_step_add_room_trvs(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Step 2 — pick TRVs from a dropdown of available devices.
+
+        Only shows devices not already assigned to another group.
+        """
+        errors: dict[str, str] = {}
+        available = self._get_available_trv_names()
+
+        if not available:
+            # All TRVs are already grouped — shouldn't normally be reachable
+            return self.async_abort(reason="no_devices_available")
+
+        if user_input is not None:
+            chosen = user_input.get("trv_names") or []
+            if not chosen:
+                errors["trv_names"] = "required"
+            else:
+                self._new_trv_names = chosen
+                return await self.async_step_add_room_sensors()
+
+        return self.async_show_form(
+            step_id="add_room_trvs",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("trv_names"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=available,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
                     ),
                 }
             ),
-            description_placeholders={
-                "trv_names_hint": "Comma-separated Zigbee2MQTT friendly names, e.g. Living Room TRV, Living Room TRV 2"
-            },
+            description_placeholders={"room_name": self._new_room_name},
             errors=errors,
         )
+
+    # ── Add room — step 3: optional temperature sensors ───────────────────────
 
     async def async_step_add_room_sensors(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Step 2 of 2 — optional extra temperature sensors, then create."""
+        """Step 3 — optional extra temperature sensors, then create the room."""
         if user_input is not None:
             self._new_temp_sensors = user_input.get("temp_sensors") or []
             return await self._create_room()
@@ -236,33 +319,33 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
             description_placeholders={
-                "room_name": self._new_room_name,
-                "trv_count": str(len(self._new_trv_names)),
+                "room_name":  self._new_room_name,
+                "trv_count":  str(len(self._new_trv_names)),
+                "trv_names":  ", ".join(self._new_trv_names),
             },
         )
 
     async def _create_room(self) -> config_entries.FlowResult:
-        """Create the room in the store and fire it live into the running hub."""
+        """Persist the room and fire it live into the running hub."""
         import uuid as _uuid
 
-        store, hub = self._get_store_and_hub()
-        room_id = str(_uuid.uuid4())
+        store, _ = self._get_store_and_hub()
+        room_id   = str(_uuid.uuid4())
         room_data = {
-            "name": self._new_room_name,
-            "trvs": self._new_trv_names,
+            "name":         self._new_room_name,
+            "trvs":         self._new_trv_names,
             "temp_sensors": self._new_temp_sensors,
-            "schedule": [],
+            "schedule":     [],
         }
 
         if store:
             await store.async_save_room(room_id, room_data)
 
-        # Fire the room_added event so the climate platform picks it up live
         self.hass.bus.async_fire(
             f"{DOMAIN}_room_added",
             {
-                "entry_id": self.config_entry.entry_id,
-                "room_id": room_id,
+                "entry_id":  self.config_entry.entry_id,
+                "room_id":   room_id,
                 "room_data": room_data,
             },
         )
@@ -275,11 +358,9 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Select a room to remove."""
-        errors: dict[str, str] = {}
         room_names = self._get_room_names()
 
         if not room_names:
-            # Shouldn't be reachable but handle gracefully
             return self.async_create_entry(title="", data=self.config_entry.options)
 
         if user_input is not None:
@@ -300,37 +381,21 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                     ),
                 }
             ),
-            errors=errors,
         )
 
     async def _delete_room(self, room_name: str) -> None:
         """Remove a room from the store and fire its removal event."""
-        store, hub = self._get_store_and_hub()
-
-        # Find the room_id by name
-        if store:
-            for room_id, rdata in list(store.get_all_rooms().items()):
-                if rdata.get("name") == room_name:
-                    await store.async_remove_room(room_id)
-                    self.hass.bus.async_fire(
-                        f"{DOMAIN}_room_removed",
-                        {"entry_id": self.config_entry.entry_id, "room_id": room_id},
-                    )
-                    break
-
-    # ── Helpers ────────────────────────────────────────────────────────────────
-
-    def _get_store_and_hub(self):
-        """Return (store, hub) from hass.data if loaded, else (None, None)."""
-        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
-        return entry_data.get(DATA_STORE), entry_data.get(DATA_HUB)
-
-    def _get_room_names(self) -> list[str]:
-        """Return sorted list of existing room names from the store."""
         store, _ = self._get_store_and_hub()
         if not store:
-            return []
-        return sorted(rdata.get("name", rid) for rid, rdata in store.get_all_rooms().items())
+            return
+        for room_id, rdata in list(store.get_all_rooms().items()):
+            if rdata.get("name") == room_name:
+                await store.async_remove_room(room_id)
+                self.hass.bus.async_fire(
+                    f"{DOMAIN}_room_removed",
+                    {"entry_id": self.config_entry.entry_id, "room_id": room_id},
+                )
+                break
 
 
 _L.warning("HIVE_DIAG config_flow: module load COMPLETE")
