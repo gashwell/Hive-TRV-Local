@@ -1,4 +1,4 @@
-"""Hive Local TRV integration — DIAGNOSTIC BUILD v0.0.6."""
+"""Hive Local TRV integration — v1.0.1."""
 from __future__ import annotations
 
 import logging
@@ -37,12 +37,14 @@ try:
         ATTR_ROOM_TRVS,
         ATTR_SCHEDULE,
         CONF_BOILER_ENTITY,
+        CONF_ENABLE_DIAGNOSTICS,
         CONF_PERSON_ENTITIES,
         CONF_Z2M_BASE_TOPIC,
         DATA_HUB,
         DATA_STORE,
         DEFAULT_BOOST_MINUTES,
         DEFAULT_BOOST_TEMP,
+        DEFAULT_ENABLE_DIAGNOSTICS,
         DOMAIN,
         LOGGER,
         MIN_HA_VERSION,
@@ -87,7 +89,21 @@ except Exception as _e:
     _L.error("HIVE_DIAG __init__: CONFIG_SCHEMA FAILED: %s", _e, exc_info=True)
     raise
 
-# ── Service schemas ─────────────────────────────────────────────────────────
+# ── Helper — emit DIAG log only when diagnostics are enabled ───────────────────
+
+def _diag(entry: ConfigEntry, msg: str, *args) -> None:
+    """Log a HIVE_DIAG message only when the diagnostics option is enabled."""
+    enabled = (
+        entry.options.get(CONF_ENABLE_DIAGNOSTICS)
+        if entry.options.get(CONF_ENABLE_DIAGNOSTICS) is not None
+        else entry.data.get(CONF_ENABLE_DIAGNOSTICS, DEFAULT_ENABLE_DIAGNOSTICS)
+    )
+    if enabled:
+        _L.warning("HIVE_DIAG " + msg, *args)
+
+
+# ── Service schemas ─────────────────────────────────────────────────────────────
+
 try:
     _BOOST_SCHEMA = vol.Schema({
         vol.Required("entity_id"): str,
@@ -124,20 +140,18 @@ except Exception as _e:
 _L.warning("HIVE_DIAG __init__: module load COMPLETE")
 
 
+# ── Integration lifecycle ───────────────────────────────────────────────────────
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Integration setup — called before any config entry."""
+    """Integration setup."""
     _L.warning("HIVE_DIAG async_setup called")
-    # Removed awesomeversion dependency — it's not always available
-    # as a standalone import in all HA environments
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Hive TRV from a config entry."""
-    _L.warning(
-        "HIVE_DIAG async_setup_entry: entry_id=%s data=%s options=%s",
-        entry.entry_id, dict(entry.data), dict(entry.options),
-    )
+    _diag(entry, "async_setup_entry: entry_id=%s data=%s options=%s",
+          entry.entry_id, dict(entry.data), dict(entry.options))
 
     base_topic = (
         entry.options.get(CONF_Z2M_BASE_TOPIC)
@@ -152,15 +166,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         or entry.data.get(CONF_PERSON_ENTITIES)
         or []
     )
-    _L.warning(
-        "HIVE_DIAG async_setup_entry: base=%s boiler=%s persons=%s",
-        base_topic, boiler_entity, person_ids,
-    )
+    _diag(entry, "async_setup_entry: base=%s boiler=%s persons=%s",
+          base_topic, boiler_entity, person_ids)
 
     try:
         store = HiveTRVStore(hass, entry.entry_id)
         await store.async_load()
-        _L.warning("HIVE_DIAG async_setup_entry: store OK")
+        _diag(entry, "async_setup_entry: store OK")
     except Exception as exc:
         _L.error("HIVE_DIAG async_setup_entry: store FAILED: %s", exc, exc_info=True)
         return False
@@ -168,7 +180,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         hub = HiveTRVHub(hass, base_topic, boiler_entity)
         await hub.async_setup()
-        _L.warning("HIVE_DIAG async_setup_entry: hub OK")
+        _diag(entry, "async_setup_entry: hub OK")
     except Exception as exc:
         _L.error("HIVE_DIAG async_setup_entry: hub FAILED: %s", exc, exc_info=True)
         return False
@@ -185,7 +197,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        _L.warning("HIVE_DIAG async_setup_entry: platforms OK — %s", PLATFORMS)
+        _diag(entry, "async_setup_entry: platforms OK — %s", PLATFORMS)
     except Exception as exc:
         _L.error("HIVE_DIAG async_setup_entry: platforms FAILED: %s", exc, exc_info=True)
         return False
@@ -200,7 +212,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _register_services(hass)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-    _L.warning("HIVE_DIAG async_setup_entry: COMPLETE")
+    _diag(entry, "async_setup_entry: COMPLETE")
     return True
 
 
@@ -219,6 +231,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
+
+# ── Room group helpers ──────────────────────────────────────────────────────────
 
 async def _create_room_coordinator(hass, entry, hub, store, room_id, room_data):
     room_coord = HiveRoomCoordinator(
@@ -243,8 +257,9 @@ async def _create_room_coordinator(hass, entry, hub, store, room_id, room_data):
     return room_coord
 
 
+# ── Service registration ────────────────────────────────────────────────────────
+
 def _register_services(hass: HomeAssistant) -> None:
-    _L.warning("HIVE_DIAG _register_services called")
 
     def _hub_store():
         entries = hass.data.get(DOMAIN, {})
@@ -356,4 +371,3 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_CANCEL_HOLIDAY,   _cancel_holiday,   _CANCEL_HOLIDAY_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_ADD_ROOM,         _add_room,         _ADD_ROOM_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_REMOVE_ROOM,      _remove_room,      _REMOVE_ROOM_SCHEMA)
-    _L.warning("HIVE_DIAG _register_services: all %d services registered", 9)
