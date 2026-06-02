@@ -77,7 +77,7 @@ class HiveLocalTRVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — device settings and group management."""
+    """Options flow — device settings, manual devices, and group management."""
 
     def __init__(self) -> None:
         self._new_room_name:    str       = ""
@@ -98,13 +98,16 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
         return s.get_all_rooms() if s else {}
 
     def _grouped_entity_ids(self, exclude_room_id: str | None = None) -> set[str]:
-        """Entity IDs already assigned to any group (optionally excluding one)."""
         grouped: set[str] = set()
         for rid, rdata in self._all_rooms().items():
             if rid == exclude_room_id:
                 continue
             grouped.update(rdata.get("members", []))
         return grouped
+
+    def _manual_trvs(self) -> list[str]:
+        s = self._store()
+        return s.get_manual_trvs() if s else []
 
     # ── Top-level menu ─────────────────────────────────────────────────────────
 
@@ -114,8 +117,9 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_menu(
             step_id="init",
             menu_options={
-                "settings": "Device settings",
-                "groups":   "Manage room groups",
+                "settings":       "Device settings",
+                "manual_devices": "Manually add / remove devices",
+                "groups":         "Manage room groups",
             },
         )
 
@@ -150,6 +154,88 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_ENABLE_DIAGNOSTICS,
                     default=opts.get(CONF_ENABLE_DIAGNOSTICS, data.get(CONF_ENABLE_DIAGNOSTICS, DEFAULT_ENABLE_DIAGNOSTICS))
                 ): selector.BooleanSelector(),
+            }),
+        )
+
+    # ── Manual device management menu ─────────────────────────────────────────
+
+    async def async_step_manual_devices(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Sub-menu for manually managing TRV devices."""
+        existing = self._manual_trvs()
+        options: dict[str, str] = {"add_manual_trv": "Add a device manually"}
+        if existing:
+            options["remove_manual_trv"] = "Remove a manually added device"
+        return self.async_show_menu(step_id="manual_devices", menu_options=options)
+
+    # ── Add manual TRV ─────────────────────────────────────────────────────────
+
+    async def async_step_add_manual_trv(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Enter the Z2M friendly name of a TRV to add manually."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            name = user_input.get("friendly_name", "").strip()
+            if not name:
+                errors["friendly_name"] = "required"
+            else:
+                store = self._store()
+                if store:
+                    await store.async_add_manual_trv(name)
+                # Fire event so __init__.py creates the coordinator live
+                self.hass.bus.async_fire(f"{DOMAIN}_manual_trv_added", {
+                    "entry_id":      self.config_entry.entry_id,
+                    "friendly_name": name,
+                })
+                return self.async_create_entry(title="", data=self.config_entry.options)
+
+        return self.async_show_form(
+            step_id="add_manual_trv",
+            data_schema=vol.Schema({
+                vol.Required("friendly_name"): selector.TextSelector(),
+            }),
+            description_placeholders={
+                "hint": "Enter the friendly name exactly as it appears in Zigbee2MQTT Devices, "
+                        "e.g. 'Living Room TRV'. The device will be added immediately — "
+                        "it does not need to have been discovered by Z2M first."
+            },
+            errors=errors,
+        )
+
+    # ── Remove manual TRV ─────────────────────────────────────────────────────
+
+    async def async_step_remove_manual_trv(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Select a manually added TRV to remove."""
+        manual = self._manual_trvs()
+        if not manual:
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        if user_input is not None:
+            name = user_input.get("friendly_name")
+            if name:
+                store = self._store()
+                if store:
+                    await store.async_remove_manual_trv(name)
+                self.hass.bus.async_fire(f"{DOMAIN}_manual_trv_removed", {
+                    "entry_id":      self.config_entry.entry_id,
+                    "friendly_name": name,
+                })
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        return self.async_show_form(
+            step_id="remove_manual_trv",
+            data_schema=vol.Schema({
+                vol.Required("friendly_name"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=sorted(manual),
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
             }),
         )
 
@@ -189,10 +275,6 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
     async def async_step_create_group_devices(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Pick member climate entities — any thermostat HA knows about.
-
-        Already-grouped entities are excluded so one device = one group.
-        """
         errors: dict[str, str] = {}
         already_grouped = self._grouped_entity_ids()
 
@@ -211,7 +293,6 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                     selector.EntitySelectorConfig(
                         domain="climate",
                         multiple=True,
-                        # Exclude already-grouped entities
                         exclude_entities=list(already_grouped),
                     )
                 ),
@@ -238,7 +319,7 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                 ),
             }),
             description_placeholders={
-                "room_name":  self._new_room_name,
+                "room_name":    self._new_room_name,
                 "member_count": str(len(self._new_member_ids)),
             },
         )
@@ -249,7 +330,7 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
         room_id   = str(_uuid.uuid4())
         room_data = {
             "name":         self._new_room_name,
-            "members":      self._new_member_ids,   # HA entity IDs
+            "members":      self._new_member_ids,
             "temp_sensors": self._new_temp_sensors,
             "schedule":     [],
         }
@@ -293,12 +374,10 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
     async def async_step_edit_group_members(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Show EntitySelector — current members pre-selected, ungrouped available."""
         errors: dict[str, str] = {}
         rooms = self._all_rooms()
         current_room    = rooms.get(self._edit_room_id, {})
         current_members = current_room.get("members", [])
-        # Entities available: currently in this room OR not in any room
         other_grouped   = self._grouped_entity_ids(exclude_room_id=self._edit_room_id)
 
         if user_input is not None:
