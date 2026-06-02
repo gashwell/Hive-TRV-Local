@@ -1,19 +1,15 @@
 """Climate platform — individual TRV entities and room group entities.
 
-Grouped TRVs suppress their own climate entity (it is managed by the group).
-Their sensor entities (battery, temperature, demand) remain visible.
-When a TRV is moved into or out of a group the climate entity is
-added/removed dynamically without a restart.
+Grouped TRVs suppress their own climate entity (controlled by the group).
+Sensor entities (battery, temperature, demand) remain visible.
+Member suppression/restoration happens live via bus events.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from homeassistant.components.climate import (
-    ClimateEntity,
-    ClimateEntityFeature,
-    HVACAction,
-    HVACMode,
+    ClimateEntity, ClimateEntityFeature, HVACAction, HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
@@ -27,33 +23,47 @@ from .entity import HiveTRVEntity
 from .room import HiveRoomCoordinator
 
 
+def _entity_id_for_coord(coord: HiveTRVCoordinator) -> str:
+    """Derive the HA entity_id that this TRV's climate entity would have."""
+    slug = coord.friendly_name.lower().replace(" ", "_").replace("-", "_")
+    return f"climate.{slug}"
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up climate entities, suppressing individual entities for grouped TRVs."""
-    hub: HiveTRVHub = hass.data[DOMAIN][entry.entry_id][DATA_HUB]
-    store = hass.data[DOMAIN][entry.entry_id][DATA_STORE]
+    """Set up climate entities. Grouped TRVs are suppressed."""
+    hub: HiveTRVHub   = hass.data[DOMAIN][entry.entry_id][DATA_HUB]
+    store             = hass.data[DOMAIN][entry.entry_id][DATA_STORE]
 
-    _trv_entities: dict[str, HiveTRVClimate]  = {}
-    _room_entities: dict[str, HiveRoomClimate] = {}
+    _trv_entities:  dict[str, HiveTRVClimate]  = {}   # keyed by friendly_name
+    _room_entities: dict[str, HiveRoomClimate] = {}   # keyed by room_id
 
-    def _grouped_trv_names() -> set[str]:
-        """Return the set of TRV names currently assigned to any room group."""
+    def _grouped_entity_ids() -> set[str]:
+        """HA entity_ids of TRVs already in any group."""
         if not store:
             return set()
         grouped: set[str] = set()
         for rdata in store.get_all_rooms().values():
-            grouped.update(rdata.get("trvs", []))
+            grouped.update(rdata.get("members", []))
+            grouped.update(rdata.get("trvs", []))   # legacy key
         return grouped
 
-    # ── Individual TRVs ───────────────────────────────────────────────────────
+    def _friendly_name_for_entity_id(entity_id: str) -> str | None:
+        """Reverse-lookup friendly_name from entity_id for Hive TRVs."""
+        for name, coord in hub.coordinators.items():
+            if _entity_id_for_coord(coord) == entity_id:
+                return name
+        return None
+
+    # ── Individual Hive TRVs ──────────────────────────────────────────────────
 
     def _add_trv(coord: HiveTRVCoordinator) -> None:
-        """Register a climate entity only if the TRV is not in a group."""
-        if coord.friendly_name in _grouped_trv_names():
-            return  # managed by its room group — suppress individual climate
+        eid = _entity_id_for_coord(coord)
+        if eid in _grouped_entity_ids():
+            return
         if coord.friendly_name not in _trv_entities:
             e = HiveTRVClimate(coord)
             _trv_entities[coord.friendly_name] = e
@@ -72,88 +82,84 @@ async def async_setup_entry(
     def _on_room_added(event: Any) -> None:
         if event.data.get("entry_id") != entry.entry_id:
             return
-        room_id    = event.data["room_id"]
+        room_id    = event.data.get("room_id")
         room_coord = event.data.get("coordinator")
         if not room_coord:
-            return
+            return   # __init__.py fires again with coordinator — wait for that
 
-        # Register the group climate entity
         if room_id not in _room_entities:
             e = HiveRoomClimate(room_coord)
             _room_entities[room_id] = e
             async_add_entities([e])
 
-        # Suppress individual climate entities for newly grouped TRVs
-        for name in room_coord.member_trv_names:
-            if name in _trv_entities:
-                ind = _trv_entities.pop(name)
+        # Suppress individual climate entities for grouped Hive TRVs
+        for eid in room_coord.member_entity_ids:
+            fname = _friendly_name_for_entity_id(eid)
+            if fname and fname in _trv_entities:
+                ind = _trv_entities.pop(fname)
                 hass.async_create_task(ind.async_remove())
 
     @callback
     def _on_room_removed(event: Any) -> None:
-        room_id   = event.data.get("room_id")
-        freed_trvs = event.data.get("freed_trvs", [])
+        room_id    = event.data.get("room_id")
+        freed_eids = event.data.get("freed_trvs", [])
+
         e = _room_entities.pop(room_id, None)
         if e:
             hass.async_create_task(e.async_remove())
 
-        # Re-register individual climate entities for TRVs released from the group
-        for name in freed_trvs:
-            coord = hub.get_coordinator(name)
-            if coord and name not in _trv_entities:
-                entity = HiveTRVClimate(coord)
-                _trv_entities[name] = entity
-                async_add_entities([entity])
+        # Restore Hive TRV climate entities for freed members
+        for eid in freed_eids:
+            fname = _friendly_name_for_entity_id(eid)
+            if fname:
+                coord = hub.get_coordinator(fname)
+                if coord and fname not in _trv_entities:
+                    entity = HiveTRVClimate(coord)
+                    _trv_entities[fname] = entity
+                    async_add_entities([entity])
 
     @callback
     def _on_room_members_changed(event: Any) -> None:
-        """Handle members being added to or removed from an existing group."""
         if event.data.get("entry_id") != entry.entry_id:
             return
-        room_id        = event.data.get("room_id")
-        added_trvs     = event.data.get("added_trvs", [])
-        removed_trvs   = event.data.get("removed_trvs", [])
+        room_id      = event.data.get("room_id")
+        added_eids   = event.data.get("added_trvs", [])
+        removed_eids = event.data.get("removed_trvs", [])
 
-        # Suppress climate entities for newly added members
-        for name in added_trvs:
-            if name in _trv_entities:
-                ind = _trv_entities.pop(name)
+        # Suppress for added members
+        for eid in added_eids:
+            fname = _friendly_name_for_entity_id(eid)
+            if fname and fname in _trv_entities:
+                ind = _trv_entities.pop(fname)
                 hass.async_create_task(ind.async_remove())
 
-        # Restore climate entities for removed members
-        for name in removed_trvs:
-            coord = hub.get_coordinator(name)
-            if coord and name not in _trv_entities:
-                entity = HiveTRVClimate(coord)
-                _trv_entities[name] = entity
-                async_add_entities([entity])
+        # Restore for removed members
+        for eid in removed_eids:
+            fname = _friendly_name_for_entity_id(eid)
+            if fname:
+                coord = hub.get_coordinator(fname)
+                if coord and fname not in _trv_entities:
+                    entity = HiveTRVClimate(coord)
+                    _trv_entities[fname] = entity
+                    async_add_entities([entity])
 
-        # Refresh the room climate entity so it reflects new membership
         room_e = _room_entities.get(room_id)
         if room_e:
             room_e.async_write_ha_state()
 
-    entry.async_on_unload(
-        hass.bus.async_listen(f"{DOMAIN}_room_added",           _on_room_added)
-    )
-    entry.async_on_unload(
-        hass.bus.async_listen(f"{DOMAIN}_room_removed",         _on_room_removed)
-    )
-    entry.async_on_unload(
-        hass.bus.async_listen(f"{DOMAIN}_room_members_changed", _on_room_members_changed)
-    )
+    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_room_added",           _on_room_added))
+    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_room_removed",         _on_room_removed))
+    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_room_members_changed", _on_room_members_changed))
 
 
-# ── Individual TRV climate entity ─────────────────────────────────────────────
+# ── Individual Hive TRV climate ────────────────────────────────────────────────
 
 class HiveTRVClimate(HiveTRVEntity, ClimateEntity):
-    """Climate entity for a single ungrouped Hive TRV."""
-
-    _attr_temperature_unit          = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes                = [HVACMode.HEAT, HVACMode.OFF]
-    _attr_min_temp                  = 5.0
-    _attr_max_temp                  = 32.0
-    _attr_target_temperature_step   = 0.5
+    _attr_temperature_unit        = UnitOfTemperature.CELSIUS
+    _attr_hvac_modes              = [HVACMode.HEAT, HVACMode.OFF]
+    _attr_min_temp                = 5.0
+    _attr_max_temp                = 32.0
+    _attr_target_temperature_step = 0.5
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.PRESET_MODE
@@ -162,10 +168,9 @@ class HiveTRVClimate(HiveTRVEntity, ClimateEntity):
     )
 
     def __init__(self, coordinator: HiveTRVCoordinator) -> None:
-        """Initialise."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.ieee_address}_climate"
-        self._attr_name      = None  # device name IS the entity name
+        self._attr_name      = None
 
     @property
     def preset_modes(self) -> list[str]:
@@ -179,7 +184,7 @@ class HiveTRVClimate(HiveTRVEntity, ClimateEntity):
     def hvac_action(self) -> HVACAction:
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        return (HVACAction.HEATING if self.coordinator.heat_required else HVACAction.IDLE)
+        return HVACAction.HEATING if self.coordinator.heat_required else HVACAction.IDLE
 
     @property
     def preset_mode(self) -> str | None:
@@ -207,8 +212,7 @@ class HiveTRVClimate(HiveTRVEntity, ClimateEntity):
         return {k: v for k, v in attrs.items() if v is not None}
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        m = MODE_OFF if hvac_mode == HVACMode.OFF else MODE_MANUAL
-        await self.coordinator.async_set_mode(m)
+        await self.coordinator.async_set_mode(MODE_OFF if hvac_mode == HVACMode.OFF else MODE_MANUAL)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         await self.coordinator.async_set_mode(preset_mode)
@@ -217,38 +221,29 @@ class HiveTRVClimate(HiveTRVEntity, ClimateEntity):
         if (t := kwargs.get(ATTR_TEMPERATURE)) is not None:
             await self.coordinator.async_set_manual_temperature(float(t))
 
-    async def async_turn_on(self)  -> None:
-        await self.coordinator.async_set_mode(MODE_MANUAL)
-
-    async def async_turn_off(self) -> None:
-        await self.coordinator.async_set_mode(MODE_OFF)
+    async def async_turn_on(self)  -> None: await self.coordinator.async_set_mode(MODE_MANUAL)
+    async def async_turn_off(self) -> None: await self.coordinator.async_set_mode(MODE_OFF)
 
 
-# ── Room group climate entity ──────────────────────────────────────────────────
+# ── Room group climate ─────────────────────────────────────────────────────────
 
 class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
-    """Climate entity representing a room group.
-
-    - Temperature: average of all member TRVs (+ any extra sensors)
-    - Mode / boost / schedule: fanned out to all member TRVs simultaneously
-    - Individual TRV sensor entities remain available for per-device temperature
-    """
+    """Climate entity for a room group — controls any mix of thermostats."""
 
     _attr_temperature_unit        = UnitOfTemperature.CELSIUS
     _attr_hvac_modes              = [HVACMode.HEAT, HVACMode.OFF]
     _attr_min_temp                = 5.0
     _attr_max_temp                = 32.0
     _attr_target_temperature_step = 0.5
+    _attr_has_entity_name         = True
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.PRESET_MODE
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TURN_OFF
     )
-    _attr_has_entity_name = True
 
     def __init__(self, coordinator: HiveRoomCoordinator) -> None:
-        """Initialise."""
         super().__init__(coordinator)
         self._attr_unique_id = f"room_{coordinator.room_id}_climate"
         self._attr_name      = coordinator.room_name
@@ -274,7 +269,7 @@ class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
     def hvac_action(self) -> HVACAction:
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        return (HVACAction.HEATING if self.coordinator.heat_required else HVACAction.IDLE)
+        return HVACAction.HEATING if self.coordinator.heat_required else HVACAction.IDLE
 
     @property
     def preset_mode(self) -> str | None:
@@ -283,7 +278,6 @@ class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        """Average temperature across all group members and extra sensors."""
         return self.coordinator.current_temperature
 
     @property
@@ -293,10 +287,11 @@ class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict:
         attrs: dict = {
-            "members":      self.coordinator.member_trv_names,
-            "member_count": len(self.coordinator.member_trv_names),
-            "heat_required": self.coordinator.heat_required,
-            "mode":         self.coordinator.mode,
+            "members":           self.coordinator.member_entity_ids,
+            "member_count":      len(self.coordinator.member_entity_ids),
+            "member_temperatures": self.coordinator.member_temperatures,
+            "heat_required":     self.coordinator.heat_required,
+            "mode":              self.coordinator.mode,
         }
         if self.coordinator.mode == MODE_BOOST:
             attrs["boost_ends"]              = self.coordinator.boost_end_time
@@ -314,8 +309,5 @@ class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
         if (t := kwargs.get(ATTR_TEMPERATURE)) is not None:
             await self.coordinator.async_set_temperature(float(t))
 
-    async def async_turn_on(self)  -> None:
-        await self.coordinator.async_set_mode(MODE_MANUAL)
-
-    async def async_turn_off(self) -> None:
-        await self.coordinator.async_set_mode(MODE_OFF)
+    async def async_turn_on(self)  -> None: await self.coordinator.async_set_mode(MODE_MANUAL)
+    async def async_turn_off(self) -> None: await self.coordinator.async_set_mode(MODE_OFF)
