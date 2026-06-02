@@ -56,7 +56,7 @@ SWEEP_INTERVAL_S = 30
 EXT_SENSOR_HEARTBEAT_S = 180
 
 # ── Platforms ──────────────────────────────────────────────────────────────────
-PLATFORMS = ["climate", "sensor", "button", "number", "select"]
+PLATFORMS = ["climate", "sensor", "button", "number", "select", "update"]
 
 # ── Services ───────────────────────────────────────────────────────────────────
 SERVICE_BOOST            = "boost"
