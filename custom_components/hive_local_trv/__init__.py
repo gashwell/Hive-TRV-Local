@@ -250,6 +250,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_BOOST):
         _register_services(hass)
 
+    # ── Listen for rooms created via Configure UI ────────────────────────────
+    # config_flow fires room_added with room_data but no coordinator.
+    # We intercept here, create the coordinator, then fire again WITH coordinator.
+    @callback
+    def _on_room_created_from_ui(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        if "coordinator" in event.data:
+            return  # already processed — fired by _create_room_coordinator
+        room_id   = event.data.get("room_id")
+        room_data = event.data.get("room_data")
+        if room_id and room_data:
+            hass.async_create_task(
+                _create_room_coordinator(hass, entry, hub, store, room_id, room_data)
+            )
+
+    entry.async_on_unload(
+        hass.bus.async_listen(f"{DOMAIN}_room_added", _on_room_created_from_ui)
+    )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     _diag(entry, "async_setup_entry: COMPLETE")
     return True
@@ -275,13 +294,14 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 # ── Room group helpers ──────────────────────────────────────────────────────────
 
 async def _create_room_coordinator(hass, entry, hub, store, room_id, room_data):
+    # Support both old ("trvs") and new ("members") storage keys for migration
+    members = room_data.get("members") or room_data.get("trvs", [])
     room_coord = HiveRoomCoordinator(
         hass,
         room_id=room_id,
         room_name=room_data["name"],
-        trv_friendly_names=room_data.get("trvs", []),
+        member_entity_ids=members,
         temp_sensor_entity_ids=room_data.get("temp_sensors", []),
-        get_trv_coordinator=hub.get_coordinator,
     )
     await room_coord.async_setup()
     hub.register_room_coordinator(room_id, room_coord)
@@ -399,7 +419,11 @@ def _register_services(hass: HomeAssistant) -> None:
                 await rc.async_unload()
                 hub.unregister_room_coordinator(room_id)
                 await store.async_remove_room(room_id)
-                hass.bus.async_fire(f"{DOMAIN}_room_removed", {"room_id": room_id})
+                freed = rc.member_entity_ids if hasattr(rc, "member_entity_ids") else []
+                hass.bus.async_fire(f"{DOMAIN}_room_removed", {
+                    "room_id":    room_id,
+                    "freed_trvs": freed,
+                })
                 return
 
     hass.services.async_register(DOMAIN, SERVICE_BOOST,            _boost,            _BOOST_SCHEMA)
