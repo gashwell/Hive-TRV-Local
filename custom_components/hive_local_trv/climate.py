@@ -19,8 +19,26 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_HUB, DATA_STORE, DOMAIN, MODE_BOOST, MODE_MANUAL, MODE_OFF, MODE_SCHEDULE
 from .coordinator import HiveTRVCoordinator, HiveTRVHub
+from homeassistant.helpers import entity_registry as er
+
 from .entity import HiveTRVEntity
 from .room import HiveRoomCoordinator
+
+
+def _disable_entity(hass, entity_id: str) -> None:
+    """Disable a TRV climate entity when it joins a group."""
+    reg = er.async_get(hass)
+    entry = reg.async_get(entity_id)
+    if entry and entry.disabled_by is None:
+        reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
+
+
+def _enable_entity(hass, entity_id: str) -> None:
+    """Re-enable a TRV climate entity when it leaves a group."""
+    reg = er.async_get(hass)
+    entry = reg.async_get(entity_id)
+    if entry and entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
+        reg.async_update_entity(entity_id, disabled_by=None)
 
 
 def _entity_id_for_coord(coord: HiveTRVCoordinator) -> str:
@@ -76,6 +94,12 @@ async def async_setup_entry(
 
     hub.register_add_entities("climate", _add_trv, _remove_trv)
 
+    # Disable entities for TRVs already in groups on this startup
+    for e in list(_trv_entities.values()):
+        if _entity_id_for_coord(e.coordinator) in _grouped_entity_ids():
+            _disable_entity(hass, e.entity_id)
+            _trv_entities.pop(e.coordinator.friendly_name, None)
+
     # ── Room groups ────────────────────────────────────────────────────────────
 
     @callback
@@ -126,22 +150,24 @@ async def async_setup_entry(
         added_eids   = event.data.get("added_trvs", [])
         removed_eids = event.data.get("removed_trvs", [])
 
-        # Suppress for added members
+        # Disable for added members
         for eid in added_eids:
             fname = _friendly_name_for_entity_id(eid)
             if fname and fname in _trv_entities:
                 ind = _trv_entities.pop(fname)
-                hass.async_create_task(ind.async_remove())
+                _disable_entity(hass, ind.entity_id)
 
-        # Restore for removed members
+        # Re-enable for removed members
         for eid in removed_eids:
             fname = _friendly_name_for_entity_id(eid)
             if fname:
                 coord = hub.get_coordinator(fname)
-                if coord and fname not in _trv_entities:
-                    entity = HiveTRVClimate(coord)
-                    _trv_entities[fname] = entity
-                    async_add_entities([entity])
+                if coord:
+                    if fname not in _trv_entities:
+                        entity = HiveTRVClimate(coord)
+                        _trv_entities[fname] = entity
+                        async_add_entities([entity])
+                    _enable_entity(hass, _entity_id_for_coord(coord))
 
         room_e = _room_entities.get(room_id)
         if room_e:
