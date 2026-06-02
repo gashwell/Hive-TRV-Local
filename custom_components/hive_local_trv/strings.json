@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Hive Local TRV",
-        "description": "Enter your Zigbee2MQTT base topic. TRVs are discovered automatically. Use Configure afterwards to set a boiler entity, geofencing, or enable diagnostic logging.",
+        "description": "Enter your Zigbee2MQTT base topic. TRVs are discovered automatically.",
         "data": {
           "z2m_base_topic": "Zigbee2MQTT base topic"
         },
@@ -19,17 +19,62 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configure Hive Local TRV",
-        "description": "Optionally configure a boiler entity, geofencing persons, and diagnostic logging.",
+        "title": "Hive Local TRV",
+        "description": "What would you like to configure?",
+        "menu_options": {
+          "settings": "Device settings",
+          "rooms": "Manage room groups"
+        }
+      },
+      "settings": {
+        "title": "Device Settings",
+        "description": "Configure your boiler entity, geofencing, and diagnostic logging.",
         "data": {
           "boiler_entity": "Boiler / receiver entity",
           "person_entities": "People to track for geofencing",
           "enable_diagnostics": "Enable diagnostic logging"
         },
         "data_description": {
-          "boiler_entity": "This entity is turned on or off based on TRV heat demand. Supports climate, switch, and input_boolean.",
+          "boiler_entity": "Turned on or off based on TRV heat demand. Supports climate, switch, and input_boolean.",
           "person_entities": "When all selected people leave home, frost protection activates automatically.",
-          "enable_diagnostics": "When enabled, HIVE_DIAG entries are written to the HA log at WARNING level. Useful for troubleshooting \u2014 disable once everything is working."
+          "enable_diagnostics": "Writes HIVE_DIAG entries to the HA log. Useful for troubleshooting \u2014 disable once working."
+        }
+      },
+      "rooms": {
+        "title": "Room Groups",
+        "description": "Add or remove virtual room groups that control multiple TRVs together.",
+        "menu_options": {
+          "add_room": "Add a room group",
+          "remove_room": "Remove a room group"
+        }
+      },
+      "add_room": {
+        "title": "Add Room Group \u2014 Step 1 of 2",
+        "description": "Enter a name for the room and the Zigbee2MQTT friendly names of all TRVs in it.",
+        "data": {
+          "room_name": "Room name",
+          "trv_names": "TRV friendly names (comma-separated)"
+        },
+        "data_description": {
+          "room_name": "Display name for the room group, e.g. Living Room.",
+          "trv_names": "Zigbee2MQTT friendly names as shown in Z2M Devices, separated by commas. Example: Living Room TRV, Living Room TRV 2"
+        }
+      },
+      "add_room_sensors": {
+        "title": "Add Room Group \u2014 Step 2 of 2",
+        "description": "Optionally add extra temperature sensors to include in the room average. Room: {room_name} ({trv_count} TRV(s))",
+        "data": {
+          "temp_sensors": "Extra temperature sensors (optional)"
+        },
+        "data_description": {
+          "temp_sensors": "HA temperature sensor entities to include alongside the TRV readings when calculating the room average."
+        }
+      },
+      "remove_room": {
+        "title": "Remove Room Group",
+        "description": "Select the room group to remove. Individual TRV entities are not affected.",
+        "data": {
+          "room_name": "Room to remove"
         }
       }
     }
