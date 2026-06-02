@@ -55,10 +55,12 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         room_name: str,
         member_entity_ids: list[str],
         temp_sensor_entity_ids: list[str],
+        store=None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=f"Hive Room {room_name}")
         self.room_id   = room_id
         self.room_name = room_name
+        self._store    = store
 
         self._member_ids  = list(member_entity_ids)
         self._sensor_ids  = list(temp_sensor_entity_ids)
@@ -226,8 +228,14 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         temperature: float | None = None,
         duration_minutes: int | None = None,
     ) -> None:
-        boost_temp = temperature or DEFAULT_BOOST_TEMP
-        boost_mins = duration_minutes or DEFAULT_BOOST_MINUTES
+        if temperature is None and self._store:
+            boost_temp = self._store.get_room_boost_temperature(self.room_id)
+        else:
+            boost_temp = temperature if temperature is not None else DEFAULT_BOOST_TEMP
+        if duration_minutes is None and self._store:
+            boost_mins = self._store.get_room_boost_duration(self.room_id)
+        else:
+            boost_mins = duration_minutes if duration_minutes is not None else DEFAULT_BOOST_MINUTES
 
         self._pre_boost_mode     = self._mode if self._mode != MODE_BOOST else self._pre_boost_mode
         self._pre_boost_setpoint = self._setpoint
