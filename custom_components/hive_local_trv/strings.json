@@ -44,7 +44,8 @@
         "description": "Add, edit, or remove room groups.",
         "menu_options": {
           "create_group": "Create a new room group",
-          "edit_group": "Edit a room group (add or remove members)",
+          "edit_group": "Edit room group members",
+          "set_schedule": "Set a heating schedule",
           "remove_group": "Remove a room group"
         }
       },
@@ -100,6 +101,23 @@
         "description": "Select the room group to remove. Individual TRV entities are not affected.",
         "data": {
           "room_name": "Room group to remove"
+        }
+      },
+      "set_schedule": {
+        "title": "Set Room Schedule \u2014 Step 1 of 2",
+        "description": "Select the room group to schedule.",
+        "data": {
+          "room_name": "Room group"
+        }
+      },
+      "set_schedule_slots": {
+        "title": "Set Room Schedule \u2014 Step 2 of 2",
+        "description": "Room: {room_name}\n\nApply a preset or clear the schedule. For a fully custom schedule use the hive_local_trv.set_schedule service.",
+        "data": {
+          "preset": "Schedule preset"
+        },
+        "data_description": {
+          "preset": "Comfort and Eco are Mon\u2013Fri/Weekend patterns. Custom schedules can be set via the Developer Tools service call."
         }
       }
     }
