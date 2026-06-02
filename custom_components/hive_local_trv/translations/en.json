@@ -13,14 +13,14 @@
       }
     },
     "abort": {
-      "already_configured": "This Zigbee2MQTT instance is already configured."
+      "already_configured": "This Zigbee2MQTT instance is already configured.",
+      "no_devices_available": "All discovered TRVs are already assigned to room groups."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Hive Local TRV",
-        "description": "What would you like to configure?",
         "menu_options": {
           "settings": "Device settings",
           "rooms": "Manage room groups"
@@ -28,7 +28,6 @@
       },
       "settings": {
         "title": "Device Settings",
-        "description": "Configure your boiler entity, geofencing, and diagnostic logging.",
         "data": {
           "boiler_entity": "Boiler / receiver entity",
           "person_entities": "People to track for geofencing",
@@ -42,32 +41,40 @@
       },
       "rooms": {
         "title": "Room Groups",
-        "description": "Add or remove virtual room groups that control multiple TRVs together.",
+        "description": "{status}",
         "menu_options": {
           "add_room": "Add a room group",
           "remove_room": "Remove a room group"
         }
       },
       "add_room": {
-        "title": "Add Room Group \u2014 Step 1 of 2",
-        "description": "Enter a name for the room and the Zigbee2MQTT friendly names of all TRVs in it.",
+        "title": "Add Room Group \u2014 Step 1 of 3",
+        "description": "Give the room a name. You will pick which TRVs belong to it in the next step.",
         "data": {
-          "room_name": "Room name",
-          "trv_names": "TRV friendly names (comma-separated)"
+          "room_name": "Room name"
         },
         "data_description": {
-          "room_name": "Display name for the room group, e.g. Living Room.",
-          "trv_names": "Zigbee2MQTT friendly names as shown in Z2M Devices, separated by commas. Example: Living Room TRV, Living Room TRV 2"
+          "room_name": "Display name for this room group, e.g. Living Room or Master Bedroom."
+        }
+      },
+      "add_room_trvs": {
+        "title": "Add Room Group \u2014 Step 2 of 3",
+        "description": "Select the TRVs and thermostats for room: {room_name}\n\nOnly devices not already in another group are shown.",
+        "data": {
+          "trv_names": "Devices"
+        },
+        "data_description": {
+          "trv_names": "Select one or more TRVs or thermostats. Each device can only belong to one group."
         }
       },
       "add_room_sensors": {
-        "title": "Add Room Group \u2014 Step 2 of 2",
-        "description": "Optionally add extra temperature sensors to include in the room average. Room: {room_name} ({trv_count} TRV(s))",
+        "title": "Add Room Group \u2014 Step 3 of 3",
+        "description": "Room: {room_name} with {trv_count} device(s): {trv_names}\n\nOptionally add extra temperature sensors to improve the room average.",
         "data": {
           "temp_sensors": "Extra temperature sensors (optional)"
         },
         "data_description": {
-          "temp_sensors": "HA temperature sensor entities to include alongside the TRV readings when calculating the room average."
+          "temp_sensors": "Additional HA temperature sensor entities included alongside TRV readings in the room temperature average."
         }
       },
       "remove_room": {
