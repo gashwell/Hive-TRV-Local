@@ -77,3 +77,9 @@ ATTR_ROOM_TRVS          = "trv_entity_ids"
 ATTR_ROOM_SENSORS       = "temp_sensor_entity_ids"
 ATTR_DEPARTURE          = "departure"
 ATTR_RETURN             = "return"
+
+# ── Diagnostics toggle ─────────────────────────────────────────────────────────
+# When True, HIVE_DIAG entries are written to the HA log at WARNING level.
+# Toggle via Settings → Integrations → Hive Local TRV → Configure.
+CONF_ENABLE_DIAGNOSTICS = "enable_diagnostics"
+DEFAULT_ENABLE_DIAGNOSTICS = False
