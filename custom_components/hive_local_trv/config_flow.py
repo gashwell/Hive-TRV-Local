@@ -105,45 +105,24 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
             grouped.update(rdata.get("members", []))
         return grouped
 
-    def _z2m_duplicate_eids(self) -> set[str]:
-        """Find Z2M/MQTT climate entity IDs that duplicate our managed TRV entities.
+    def _our_trv_entity_ids(self) -> set[str]:
+        """Find climate entity IDs created by THIS integration for managed TRVs.
 
-        Excluded from the group member picker so each TRV appears only once.
-        Wrapped in try/except so any HA version differences in the entity registry
-        API never crash the config flow.
+        These are excluded from the group member picker so users see the Z2M
+        entities (and any other thermostats) but not our duplicate TRV objects.
+        Wrapped in try/except so entity registry API differences never crash
+        the config flow.
         """
         try:
             from homeassistant.helpers import entity_registry as er
-
-            hub = self._hub()
-            if not hub:
-                return set()
-
             ent_reg = er.async_get(self.hass)
-            our_names_lower = {n.lower() for n in hub.coordinators}
-            dupes: set[str] = set()
-
-            for entry in ent_reg.entities.values():
-                # Use entity_id split — more reliable than entry.domain across HA versions
-                if entry.entity_id.split(".")[0] != "climate":
-                    continue
-                if entry.platform not in ("mqtt", "zigbee2mqtt"):
-                    continue
-                state = self.hass.states.get(entry.entity_id)
-                if state:
-                    name = (state.attributes.get("friendly_name") or "").lower()
-                else:
-                    name = (
-                        getattr(entry, "name", None)
-                        or getattr(entry, "original_name", None)
-                        or ""
-                    ).lower()
-                if name in our_names_lower:
-                    dupes.add(entry.entity_id)
-
-            return dupes
+            return {
+                entry.entity_id
+                for entry in ent_reg.entities.values()
+                if entry.platform == DOMAIN
+                and entry.entity_id.split(".")[0] == "climate"
+            }
         except Exception:  # noqa: BLE001
-            # Never crash the config flow due to entity registry API differences
             return set()
 
     def _manual_trvs(self) -> list[str]:
@@ -334,7 +313,7 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
                     selector.EntitySelectorConfig(
                         domain="climate",
                         multiple=True,
-                        exclude_entities=list(already_grouped | self._z2m_duplicate_eids()),
+                        exclude_entities=list(already_grouped | self._our_trv_entity_ids()),
                     )
                 ),
             }),
@@ -462,6 +441,81 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
             "added_trvs":   added,
             "removed_trvs": removed,
         })
+
+    # ── Set room schedule ─────────────────────────────────────────────────────
+
+    async def async_step_set_schedule(self, user_input=None):
+        rooms = self._all_rooms()
+        if not rooms:
+            return self.async_create_entry(title="", data=self.config_entry.options)
+        if user_input is not None:
+            chosen = user_input.get("room_name", "")
+            for rid, rd in rooms.items():
+                if rd.get("name") == chosen:
+                    self._edit_room_id = rid; self._edit_room_name = chosen; break
+            return await self.async_step_set_schedule_slots()
+        room_names = sorted(rd.get("name", rid) for rid, rd in rooms.items())
+        return self.async_show_form(
+            step_id="set_schedule",
+            data_schema=vol.Schema({
+                vol.Required("room_name"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=room_names, mode=selector.SelectSelectorMode.DROPDOWN)
+                ),
+            }),
+        )
+
+    async def async_step_set_schedule_slots(self, user_input=None):
+        """Apply a preset schedule or clear the existing one."""
+        if user_input is not None:
+            preset = user_input.get("preset", "keep")
+            store  = self._store()
+            PRESETS = {
+                "comfort": [
+                    {"days":[0,1,2,3,4],"time":"06:30","temperature":21.0},
+                    {"days":[0,1,2,3,4],"time":"09:00","temperature":18.0},
+                    {"days":[0,1,2,3,4],"time":"17:00","temperature":21.0},
+                    {"days":[0,1,2,3,4],"time":"22:30","temperature":16.0},
+                    {"days":[5,6],"time":"08:00","temperature":21.0},
+                    {"days":[5,6],"time":"23:00","temperature":16.0},
+                ],
+                "eco": [
+                    {"days":[0,1,2,3,4],"time":"07:00","temperature":19.0},
+                    {"days":[0,1,2,3,4],"time":"09:00","temperature":16.0},
+                    {"days":[0,1,2,3,4],"time":"17:30","temperature":19.0},
+                    {"days":[0,1,2,3,4],"time":"22:30","temperature":16.0},
+                    {"days":[5,6],"time":"08:30","temperature":19.0},
+                    {"days":[5,6],"time":"23:00","temperature":16.0},
+                ],
+            }
+            current = self._all_rooms().get(self._edit_room_id, {}).get("schedule", [])
+            schedule = [] if preset == "clear" else PRESETS.get(preset, current)
+            if store and preset != "keep":
+                await store.async_set_room_schedule(self._edit_room_id, schedule)
+            hub = self._hub()
+            if hub:
+                rc = hub._room_coordinators.get(self._edit_room_id)
+                if rc:
+                    if schedule: self.hass.async_create_task(rc.async_set_schedule(schedule))
+                    else: rc.clear_schedule()
+            return self.async_create_entry(title="", data=self.config_entry.options)
+        n = len(self._all_rooms().get(self._edit_room_id, {}).get("schedule", []))
+        return self.async_show_form(
+            step_id="set_schedule_slots",
+            data_schema=vol.Schema({
+                vol.Required("preset", default="comfort"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="comfort", label="Comfort — 21 °C daytime, 16 °C night"),
+                            selector.SelectOptionDict(value="eco",     label="Eco — 19 °C daytime, 16 °C night"),
+                            selector.SelectOptionDict(value="keep",    label=f"Keep existing ({n} slots)"),
+                            selector.SelectOptionDict(value="clear",   label="Clear schedule (manual mode)"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            description_placeholders={"room_name": self._edit_room_name},
+        )
 
     # ── Remove group ───────────────────────────────────────────────────────────
 
