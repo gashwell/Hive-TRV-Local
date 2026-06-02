@@ -9,6 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DATA_HUB, DATA_STORE, DEFAULT_BOOST_MINUTES, DEFAULT_BOOST_TEMP, DOMAIN
 from .coordinator import HiveTRVCoordinator, HiveTRVHub
+from .room import HiveRoomCoordinator
 from .entity import HiveTRVEntity
 from .storage import HiveTRVStore
 
