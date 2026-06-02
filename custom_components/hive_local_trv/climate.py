@@ -168,9 +168,8 @@ class HiveTRVClimate(HiveTRVEntity, ClimateEntity):
     )
 
     def __init__(self, coordinator: HiveTRVCoordinator) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.ieee_address}_climate"
-        self._attr_name      = None
+        super().__init__(coordinator, "climate")
+        self._attr_name = None
 
     @property
     def preset_modes(self) -> list[str]:
