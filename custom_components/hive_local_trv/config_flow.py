@@ -108,37 +108,43 @@ class HiveLocalTRVOptionsFlow(config_entries.OptionsFlow):
     def _z2m_duplicate_eids(self) -> set[str]:
         """Find Z2M/MQTT climate entity IDs that duplicate our managed TRV entities.
 
-        When users add members to a group, the EntitySelector shows ALL climate
-        entities including both Z2M's entity and our integration's entity for the
-        same physical TRV. This method returns the Z2M ones so they can be excluded
-        from the picker, leaving only our entities and unrelated thermostats.
+        Excluded from the group member picker so each TRV appears only once.
+        Wrapped in try/except so any HA version differences in the entity registry
+        API never crash the config flow.
         """
-        from homeassistant.helpers import entity_registry as er
+        try:
+            from homeassistant.helpers import entity_registry as er
 
-        hub = self._hub()
-        if not hub:
+            hub = self._hub()
+            if not hub:
+                return set()
+
+            ent_reg = er.async_get(self.hass)
+            our_names_lower = {n.lower() for n in hub.coordinators}
+            dupes: set[str] = set()
+
+            for entry in ent_reg.entities.values():
+                # Use entity_id split — more reliable than entry.domain across HA versions
+                if entry.entity_id.split(".")[0] != "climate":
+                    continue
+                if entry.platform not in ("mqtt", "zigbee2mqtt"):
+                    continue
+                state = self.hass.states.get(entry.entity_id)
+                if state:
+                    name = (state.attributes.get("friendly_name") or "").lower()
+                else:
+                    name = (
+                        getattr(entry, "name", None)
+                        or getattr(entry, "original_name", None)
+                        or ""
+                    ).lower()
+                if name in our_names_lower:
+                    dupes.add(entry.entity_id)
+
+            return dupes
+        except Exception:  # noqa: BLE001
+            # Never crash the config flow due to entity registry API differences
             return set()
-
-        ent_reg = er.async_get(self.hass)
-        our_names_lower = {n.lower() for n in hub.coordinators}
-        dupes: set[str] = set()
-
-        for entry in ent_reg.entities.values():
-            if entry.domain != "climate":
-                continue
-            # Z2M exposes devices via the mqtt platform
-            if entry.platform not in ("mqtt", "zigbee2mqtt"):
-                continue
-            # Match by checking if the state friendly_name matches a TRV we manage
-            state = self.hass.states.get(entry.entity_id)
-            name = (
-                (state.attributes.get("friendly_name") or "") if state
-                else (entry.name or entry.original_name or "")
-            ).lower()
-            if name in our_names_lower:
-                dupes.add(entry.entity_id)
-
-        return dupes
 
     def _manual_trvs(self) -> list[str]:
         s = self._store()
