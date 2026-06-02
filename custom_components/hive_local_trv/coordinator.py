@@ -305,6 +305,14 @@ class HiveTRVHub:
     def unregister_room_coordinator(self, room_id: str) -> None:
         self._room_coordinators.pop(room_id, None)
 
+    async def async_add_manual_trv(self, friendly_name: str) -> None:
+        """Manually register a TRV by Z2M friendly name."""
+        await self._add_trv(friendly_name, {})
+
+    async def async_remove_manual_trv(self, friendly_name: str) -> None:
+        """Remove a manually added TRV coordinator."""
+        await self._remove_trv(friendly_name)
+
     @property
     def coordinators(self) -> dict[str, HiveTRVCoordinator]:
         return dict(self._coordinators)
