@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Hive Local TRV",
-        "description": "Enter your Zigbee2MQTT base topic. TRVs are discovered automatically. Use Configure afterwards to set a boiler entity or geofencing.",
+        "description": "Enter your Zigbee2MQTT base topic. TRVs are discovered automatically. Use Configure afterwards to set a boiler entity, geofencing, or enable diagnostic logging.",
         "data": {
           "z2m_base_topic": "Zigbee2MQTT base topic"
         },
@@ -20,14 +20,16 @@
     "step": {
       "init": {
         "title": "Configure Hive Local TRV",
-        "description": "Optionally configure a boiler entity and geofencing persons.",
+        "description": "Optionally configure a boiler entity, geofencing persons, and diagnostic logging.",
         "data": {
           "boiler_entity": "Boiler / receiver entity",
-          "person_entities": "People to track for geofencing"
+          "person_entities": "People to track for geofencing",
+          "enable_diagnostics": "Enable diagnostic logging"
         },
         "data_description": {
           "boiler_entity": "This entity is turned on or off based on TRV heat demand. Supports climate, switch, and input_boolean.",
-          "person_entities": "When all selected people leave home, frost protection activates automatically."
+          "person_entities": "When all selected people leave home, frost protection activates automatically.",
+          "enable_diagnostics": "When enabled, HIVE_DIAG entries are written to the HA log at WARNING level. Useful for troubleshooting \u2014 disable once everything is working."
         }
       }
     }
