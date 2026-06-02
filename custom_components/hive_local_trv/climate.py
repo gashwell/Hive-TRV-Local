@@ -132,15 +132,18 @@ async def async_setup_entry(
         if e:
             hass.async_create_task(e.async_remove())
 
-        # Restore Hive TRV climate entities for freed members
+        # Re-enable OUR entity for each TRV leaving the group
         for eid in freed_eids:
-            fname = _friendly_name_for_entity_id(eid)
+            fname = _fname_for_z2m_eid(eid) or _friendly_name_for_entity_id(eid)
             if fname:
                 coord = hub.get_coordinator(fname)
-                if coord and fname not in _trv_entities:
-                    entity = HiveTRVClimate(coord)
-                    _trv_entities[fname] = entity
-                    async_add_entities([entity])
+                if coord:
+                    our_eid = _entity_id_for_coord(coord)
+                    if fname not in _trv_entities:
+                        entity = HiveTRVClimate(coord)
+                        _trv_entities[fname] = entity
+                        async_add_entities([entity])
+                    _enable_entity(hass, our_eid)
 
     @callback
     def _on_room_members_changed(event: Any) -> None:
@@ -150,24 +153,27 @@ async def async_setup_entry(
         added_eids   = event.data.get("added_trvs", [])
         removed_eids = event.data.get("removed_trvs", [])
 
-        # Disable for added members
+        # Disable OUR entity for newly added Z2M members
         for eid in added_eids:
-            fname = _friendly_name_for_entity_id(eid)
-            if fname and fname in _trv_entities:
-                ind = _trv_entities.pop(fname)
-                _disable_entity(hass, ind.entity_id)
-
-        # Re-enable for removed members
-        for eid in removed_eids:
-            fname = _friendly_name_for_entity_id(eid)
+            fname = _fname_for_z2m_eid(eid) or _friendly_name_for_entity_id(eid)
             if fname:
                 coord = hub.get_coordinator(fname)
                 if coord:
+                    _trv_entities.pop(fname, None)
+                    _disable_entity(hass, _entity_id_for_coord(coord))
+
+        # Re-enable OUR entity for removed Z2M members
+        for eid in removed_eids:
+            fname = _fname_for_z2m_eid(eid) or _friendly_name_for_entity_id(eid)
+            if fname:
+                coord = hub.get_coordinator(fname)
+                if coord:
+                    our_eid = _entity_id_for_coord(coord)
                     if fname not in _trv_entities:
                         entity = HiveTRVClimate(coord)
                         _trv_entities[fname] = entity
                         async_add_entities([entity])
-                    _enable_entity(hass, _entity_id_for_coord(coord))
+                    _enable_entity(hass, our_eid)
 
         room_e = _room_entities.get(room_id)
         if room_e:
