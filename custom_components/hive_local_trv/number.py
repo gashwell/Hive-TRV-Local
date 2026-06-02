@@ -6,6 +6,7 @@ from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.const import UnitOfTemperature
 
 from .const import DATA_HUB, DATA_STORE, DEFAULT_BOOST_MINUTES, DEFAULT_BOOST_TEMP, DOMAIN
 from .coordinator import HiveTRVCoordinator, HiveTRVHub
