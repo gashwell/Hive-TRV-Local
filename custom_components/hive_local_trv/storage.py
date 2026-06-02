@@ -117,6 +117,27 @@ class HiveTRVStore:
             self._data["rooms"][room_id]["schedule"] = schedule
             await self.async_save()
 
+    # ── Room boost defaults ───────────────────────────────────────────────────
+
+    def get_room_boost_temperature(self, room_id: str) -> float:
+        from .const import DEFAULT_BOOST_TEMP
+        room = self._data.get("rooms", {}).get(room_id, {})
+        return float(room.get("boost_temperature", DEFAULT_BOOST_TEMP))
+
+    def get_room_boost_duration(self, room_id: str) -> int:
+        from .const import DEFAULT_BOOST_MINUTES
+        room = self._data.get("rooms", {}).get(room_id, {})
+        return int(room.get("boost_duration", DEFAULT_BOOST_MINUTES))
+
+    async def async_set_room_boost_defaults(
+        self, room_id: str, temperature: float, duration: int
+    ) -> None:
+        room = self._data.get("rooms", {}).get(room_id)
+        if room is not None:
+            room["boost_temperature"] = temperature
+            room["boost_duration"]    = duration
+            await self.async_save()
+
     # ── Holiday helpers ───────────────────────────────────────────────────────
 
     def get_holiday(self) -> dict | None:
