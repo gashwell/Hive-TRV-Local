@@ -8,7 +8,7 @@
           "z2m_base_topic": "Zigbee2MQTT base topic"
         },
         "data_description": {
-          "z2m_base_topic": "Must match base_topic in your Zigbee2MQTT configuration (default: zigbee2mqtt)"
+          "z2m_base_topic": "Must match base_topic in your Zigbee2MQTT config (default: zigbee2mqtt)"
         }
       }
     },
@@ -23,7 +23,7 @@
         "title": "Hive Local TRV",
         "menu_options": {
           "settings": "Device settings",
-          "rooms": "Manage room groups"
+          "groups": "Manage room groups"
         }
       },
       "settings": {
@@ -36,52 +36,70 @@
         "data_description": {
           "boiler_entity": "Turned on or off based on TRV heat demand. Supports climate, switch, and input_boolean.",
           "person_entities": "When all selected people leave home, frost protection activates automatically.",
-          "enable_diagnostics": "Writes HIVE_DIAG entries to the HA log. Useful for troubleshooting \u2014 disable once working."
+          "enable_diagnostics": "Writes HIVE_DIAG entries to the HA log. Useful for troubleshooting."
         }
       },
-      "rooms": {
+      "groups": {
         "title": "Room Groups",
         "description": "{status}",
         "menu_options": {
-          "add_room": "Add a room group",
-          "remove_room": "Remove a room group"
+          "create_group": "Create a new room group",
+          "edit_group": "Edit a room group (add or remove members)",
+          "remove_group": "Remove a room group"
         }
       },
-      "add_room": {
-        "title": "Add Room Group \u2014 Step 1 of 3",
-        "description": "Give the room a name. You will pick which TRVs belong to it in the next step.",
+      "create_group": {
+        "title": "Create Room Group \u2014 Step 1 of 3",
+        "description": "Enter a name for the new room group.",
         "data": {
           "room_name": "Room name"
         },
         "data_description": {
-          "room_name": "Display name for this room group, e.g. Living Room or Master Bedroom."
+          "room_name": "Display name, e.g. Living Room or Master Bedroom."
         }
       },
-      "add_room_trvs": {
-        "title": "Add Room Group \u2014 Step 2 of 3",
-        "description": "Select the TRVs and thermostats for room: {room_name}\n\nOnly devices not already in another group are shown.",
+      "create_group_devices": {
+        "title": "Create Room Group \u2014 Step 2 of 3",
+        "description": "Select devices for room: {room_name}\n\nOnly devices not already in another group are shown. Each device can only belong to one group.",
         "data": {
           "trv_names": "Devices"
         },
         "data_description": {
-          "trv_names": "Select one or more TRVs or thermostats. Each device can only belong to one group."
+          "trv_names": "Select one or more TRVs or thermostats."
         }
       },
-      "add_room_sensors": {
-        "title": "Add Room Group \u2014 Step 3 of 3",
-        "description": "Room: {room_name} with {trv_count} device(s): {trv_names}\n\nOptionally add extra temperature sensors to improve the room average.",
+      "create_group_sensors": {
+        "title": "Create Room Group \u2014 Step 3 of 3",
+        "description": "Room: {room_name} with {trv_count} device(s): {trv_names}\n\nOptionally add extra temperature sensors.",
         "data": {
           "temp_sensors": "Extra temperature sensors (optional)"
         },
         "data_description": {
-          "temp_sensors": "Additional HA temperature sensor entities included alongside TRV readings in the room temperature average."
+          "temp_sensors": "Additional HA temperature sensor entities included in the room temperature average."
         }
       },
-      "remove_room": {
+      "edit_group": {
+        "title": "Edit Room Group \u2014 Step 1 of 2",
+        "description": "Select the room group to edit.",
+        "data": {
+          "room_name": "Room group"
+        }
+      },
+      "edit_group_members": {
+        "title": "Edit Room Group \u2014 Step 2 of 2",
+        "description": "Room: {room_name}\n\nCurrent members: {current_members}\n\nSelect the devices that should be in this group. Devices from other groups are not shown.",
+        "data": {
+          "trv_names": "Members"
+        },
+        "data_description": {
+          "trv_names": "Tick all devices that should belong to this group. Unticked current members will be removed."
+        }
+      },
+      "remove_group": {
         "title": "Remove Room Group",
         "description": "Select the room group to remove. Individual TRV entities are not affected.",
         "data": {
-          "room_name": "Room to remove"
+          "room_name": "Room group to remove"
         }
       }
     }
