@@ -224,6 +224,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _L.error("HIVE_DIAG async_setup_entry: hub FAILED: %s", exc, exc_info=True)
         return False
 
+    # Load manually added TRVs — bypass Z2M model filter
+    for manual_name in store.get_manual_trvs():
+        await hub.async_add_manual_trv(manual_name)
+    _diag(entry, "async_setup_entry: manual TRVs loaded: %s", store.get_manual_trvs())
+
     holiday_mgr  = HolidayManager(hass, store, hub)
     presence_mgr = PresenceManager(hass, person_ids, hub, holiday_mgr)
 
@@ -249,6 +254,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if not hass.services.has_service(DOMAIN, SERVICE_BOOST):
         _register_services(hass)
+
+    # ── Listen for manual TRV add/remove fired from config_flow ─────────────
+    @callback
+    def _on_manual_trv_added(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        name = event.data.get("friendly_name")
+        if name:
+            hass.async_create_task(hub.async_add_manual_trv(name))
+
+    @callback
+    def _on_manual_trv_removed(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        name = event.data.get("friendly_name")
+        if name:
+            hass.async_create_task(hub.async_remove_manual_trv(name))
+
+    entry.async_on_unload(
+        hass.bus.async_listen(f"{DOMAIN}_manual_trv_added", _on_manual_trv_added)
+    )
+    entry.async_on_unload(
+        hass.bus.async_listen(f"{DOMAIN}_manual_trv_removed", _on_manual_trv_removed)
+    )
 
     # ── Listen for rooms created via Configure UI ────────────────────────────
     # config_flow fires room_added with room_data but no coordinator.
