@@ -197,6 +197,10 @@ class HiveTRVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_set_heat_available(self, available: bool) -> None:
         await self.async_publish({"heat_available": available})
 
+    async def async_set_mounting_orientation(self, orientation: str) -> None:
+        """Set valve mounting orientation: auto, horizontal, or vertical."""
+        await self._publish({"mounting_mode_control": orientation})
+
     async def async_push_external_temp(self, temp_c: float) -> None:
         await self.async_publish({"external_measured_room_sensor": round(temp_c * 100)})
 
