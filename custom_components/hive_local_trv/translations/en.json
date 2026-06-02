@@ -41,7 +41,7 @@
       },
       "groups": {
         "title": "Room Groups",
-        "description": "{status}",
+        "description": "Add, edit, or remove room groups.",
         "menu_options": {
           "create_group": "Create a new room group",
           "edit_group": "Edit a room group (add or remove members)",
