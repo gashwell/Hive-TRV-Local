@@ -18,7 +18,7 @@ except Exception as _e:
 
 try:
     from homeassistant.config_entries import ConfigEntry
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.core import HomeAssistant, ServiceCall, callback
     from homeassistant.helpers import config_validation as cv
     from homeassistant.helpers.typing import ConfigType
     _L.warning("HIVE_DIAG __init__: homeassistant core OK")
