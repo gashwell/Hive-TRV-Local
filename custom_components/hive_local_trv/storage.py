@@ -129,3 +129,25 @@ class HiveTRVStore:
     async def async_clear_holiday(self) -> None:
         self._data.pop("holiday", None)
         await self.async_save()
+
+    # ── Manual TRV list ───────────────────────────────────────────────────────
+
+    def get_manual_trvs(self) -> list[str]:
+        """Return list of manually added TRV friendly names."""
+        return list(self._data.get("manual_trvs", []))
+
+    async def async_add_manual_trv(self, friendly_name: str) -> None:
+        """Add a TRV friendly name to the manual list."""
+        trvs = self.get_manual_trvs()
+        if friendly_name not in trvs:
+            trvs.append(friendly_name)
+            self._data["manual_trvs"] = trvs
+            await self.async_save()
+
+    async def async_remove_manual_trv(self, friendly_name: str) -> None:
+        """Remove a TRV friendly name from the manual list."""
+        trvs = self.get_manual_trvs()
+        if friendly_name in trvs:
+            trvs.remove(friendly_name)
+            self._data["manual_trvs"] = trvs
+            await self.async_save()
