@@ -31,8 +31,8 @@ async def async_setup_entry(
     def _add_trv(coord: HiveTRVCoordinator) -> None:
         if coord.friendly_name not in _trv:
             es = [
-                HiveBoostButton(coord, store),
-                HiveEndBoostButton(coord),
+                HiveBoostButton(coord, store, hub),
+                HiveEndBoostButton(coord, hub),
                 HiveAdaptationButton(coord),
                 HiveMountingButton(coord),
             ]
@@ -55,8 +55,8 @@ async def async_setup_entry(
         room_coord = event.data.get("coordinator")
         if room_coord and room_id not in _room:
             es = [
-                HiveRoomBoostButton(room_coord),
-                HiveRoomEndBoostButton(room_coord),
+                HiveRoomBoostButton(room_coord, hub),
+                HiveRoomEndBoostButton(room_coord, hub),
             ]
             _room[room_id] = es
             async_add_entities(es)
@@ -73,33 +73,50 @@ async def async_setup_entry(
 # ── Individual TRV buttons ─────────────────────────────────────────────────────
 
 class HiveBoostButton(HiveTRVEntity, ButtonEntity):
-    """Start a boost at the TRV's stored default temperature and duration."""
+    """Start a boost at the TRV's stored default temperature and duration.
+
+    Only available when a boiler/receiver entity is configured.
+    """
 
     _attr_name = "Boost"
     _attr_icon = "mdi:rocket-launch"
 
-    def __init__(self, coord: HiveTRVCoordinator, store) -> None:
+    def __init__(self, coord: HiveTRVCoordinator, store, hub) -> None:
         super().__init__(coord, "boost")
         self._store = store
+        self._hub   = hub
+
+    @property
+    def available(self) -> bool:
+        """Only available when a boiler/receiver entity is configured."""
+        return bool(self.coordinator.data) and bool(self._hub.boiler_entity)
 
     async def async_press(self) -> None:
-        temp = self._store.get_boost_temperature(self.coordinator.friendly_name)
-        mins = self._store.get_boost_duration(self.coordinator.friendly_name)
+        temp = self._store.get_trv_boost_temperature(self.coordinator.friendly_name)
+        mins = self._store.get_trv_boost_duration(self.coordinator.friendly_name)
         await self.coordinator.async_start_boost(temp, mins)
 
 
 class HiveEndBoostButton(HiveTRVEntity, ButtonEntity):
-    """Cancel an active boost and return to the previous mode."""
+    """Cancel an active boost. Only available when boost is active.
+
+    Also requires a boiler/receiver entity to be configured.
+    """
 
     _attr_name = "End Boost"
     _attr_icon = "mdi:stop-circle-outline"
 
-    def __init__(self, coord: HiveTRVCoordinator) -> None:
+    def __init__(self, coord: HiveTRVCoordinator, hub) -> None:
         super().__init__(coord, "end_boost")
+        self._hub = hub
 
     @property
     def available(self) -> bool:
-        return bool(self.coordinator.data) and self.coordinator.mode == "boost"
+        return (
+            bool(self.coordinator.data)
+            and self.coordinator.mode == "boost"
+            and bool(self._hub.boiler_entity)
+        )
 
     async def async_press(self) -> None:
         await self.coordinator.async_end_boost()
@@ -134,13 +151,17 @@ class HiveMountingButton(HiveTRVEntity, ButtonEntity):
 # ── Room group buttons ─────────────────────────────────────────────────────────
 
 class HiveRoomBoostButton(CoordinatorEntity[HiveRoomCoordinator], ButtonEntity):
-    """Boost all devices in the room group at once."""
+    """Boost all devices in the room group at once.
+
+    Only available when a boiler/receiver entity is configured.
+    """
 
     _attr_icon            = "mdi:rocket-launch"
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: HiveRoomCoordinator) -> None:
+    def __init__(self, coordinator: HiveRoomCoordinator, hub) -> None:
         super().__init__(coordinator)
+        self._hub            = hub
         self._attr_unique_id = f"room_{coordinator.room_id}_boost"
         self._attr_name      = f"{coordinator.room_name} Boost"
 
@@ -148,18 +169,23 @@ class HiveRoomBoostButton(CoordinatorEntity[HiveRoomCoordinator], ButtonEntity):
     def device_info(self) -> dict:
         return {"identifiers": {(DOMAIN, f"room_{self.coordinator.room_id}")}}
 
+    @property
+    def available(self) -> bool:
+        return bool(self._hub.boiler_entity)
+
     async def async_press(self) -> None:
         await self.coordinator.async_start_boost()
 
 
 class HiveRoomEndBoostButton(CoordinatorEntity[HiveRoomCoordinator], ButtonEntity):
-    """Cancel the active boost on all group members."""
+    """Cancel the active boost. Only available when boost is active."""
 
     _attr_icon            = "mdi:stop-circle-outline"
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: HiveRoomCoordinator) -> None:
+    def __init__(self, coordinator: HiveRoomCoordinator, hub) -> None:
         super().__init__(coordinator)
+        self._hub            = hub
         self._attr_unique_id = f"room_{coordinator.room_id}_end_boost"
         self._attr_name      = f"{coordinator.room_name} End Boost"
 
@@ -169,7 +195,10 @@ class HiveRoomEndBoostButton(CoordinatorEntity[HiveRoomCoordinator], ButtonEntit
 
     @property
     def available(self) -> bool:
-        return self.coordinator.mode == "boost"
+        return (
+            self.coordinator.mode == "boost"
+            and bool(self._hub.boiler_entity)
+        )
 
     async def async_press(self) -> None:
         await self.coordinator.async_end_boost()
