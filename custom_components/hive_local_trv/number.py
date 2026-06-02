@@ -1,6 +1,7 @@
 """Number platform — setpoint offset, scale factor, boost defaults."""
 from __future__ import annotations
 
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -33,6 +34,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             hass.async_create_task(e.async_remove())
 
     hub.register_add_entities("number", _add, _remove)
+
+    # ── Room group number entities ──────────────────────────────────────
+    from homeassistant.core import callback
+    _room: dict[str, list] = {}
+
+    @callback
+    def _on_room_added(event):
+        if event.data.get("entry_id") != entry.entry_id: return
+        room_id    = event.data.get("room_id")
+        room_coord = event.data.get("coordinator")
+        if room_coord and room_id not in _room:
+            es = [
+                HiveRoomBoostTempNumber(room_coord, store),
+                HiveRoomBoostDurationNumber(room_coord, store),
+            ]
+            _room[room_id] = es
+            async_add_entities(es)
+
+    @callback
+    def _on_room_removed(event):
+        for e in _room.pop(event.data.get("room_id"), []):
+            hass.async_create_task(e.async_remove())
+
+    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_room_added",   _on_room_added))
+    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_room_removed", _on_room_removed))
 
 
 class HiveOffsetNumber(HiveTRVEntity, NumberEntity):
@@ -129,3 +155,56 @@ class HiveBoostDurationNumber(HiveTRVEntity, NumberEntity):
             self.coordinator.friendly_name, temp, int(value)
         )
         self.async_write_ha_state()
+
+
+# ── Room group number entities ─────────────────────────────────────────────────
+
+class HiveRoomBoostTempNumber(CoordinatorEntity[HiveRoomCoordinator], NumberEntity):
+    """Default boost temperature for a room group."""
+    _attr_icon = "mdi:thermometer-high"
+    _attr_native_min_value = 5.0; _attr_native_max_value = 32.0
+    _attr_native_step = 0.5; _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_mode = NumberMode.BOX; _attr_has_entity_name = True
+
+    def __init__(self, coordinator, store):
+        super().__init__(coordinator)
+        self._store = store
+        self._attr_unique_id = f"room_{coordinator.room_id}_boost_temperature"
+        self._attr_name      = f"{coordinator.room_name} Boost Temperature"
+
+    @property
+    def device_info(self): return {"identifiers": {(DOMAIN, f"room_{self.coordinator.room_id}")}}
+
+    @property
+    def native_value(self): return self._store.get_room_boost_temperature(self.coordinator.room_id)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self._store.async_set_room_boost_defaults(
+            self.coordinator.room_id, value,
+            self._store.get_room_boost_duration(self.coordinator.room_id))
+
+
+class HiveRoomBoostDurationNumber(CoordinatorEntity[HiveRoomCoordinator], NumberEntity):
+    """Default boost duration for a room group."""
+    _attr_icon = "mdi:timer-outline"
+    _attr_native_min_value = 1; _attr_native_max_value = 240
+    _attr_native_step = 1; _attr_native_unit_of_measurement = "min"
+    _attr_mode = NumberMode.BOX; _attr_has_entity_name = True
+
+    def __init__(self, coordinator, store):
+        super().__init__(coordinator)
+        self._store = store
+        self._attr_unique_id = f"room_{coordinator.room_id}_boost_duration"
+        self._attr_name      = f"{coordinator.room_name} Boost Duration"
+
+    @property
+    def device_info(self): return {"identifiers": {(DOMAIN, f"room_{self.coordinator.room_id}")}}
+
+    @property
+    def native_value(self): return self._store.get_room_boost_duration(self.coordinator.room_id)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self._store.async_set_room_boost_defaults(
+            self.coordinator.room_id,
+            self._store.get_room_boost_temperature(self.coordinator.room_id),
+            int(value))
