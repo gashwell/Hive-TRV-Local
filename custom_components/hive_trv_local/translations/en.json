@@ -3,17 +3,47 @@
     "step": {
       "user": {
         "title": "Hive TRV Local",
-        "description": "{info}",
+        "menu_options": {
+          "add_trv": "Add a TRV",
+          "add_receiver": "Add a receiver (SLR1 / SLR2 / OTR1)",
+          "setup_groups": "Set up room group manager"
+        }
+      },
+      "add_trv": {
+        "title": "Add TRV",
+        "description": "Enter the device name and its Zigbee2MQTT topic.\n\nExample topic: zigbee2mqtt/Living Room TRV",
         "data": {
-          "z2m_base_topic": "Zigbee2MQTT base topic"
+          "device_name": "Device name",
+          "mqtt_topic": "Z2M MQTT topic"
         },
         "data_description": {
-          "z2m_base_topic": "The MQTT topic prefix used by Zigbee2MQTT (default: zigbee2mqtt)."
+          "device_name": "A friendly name for this TRV, e.g. Living Room TRV",
+          "mqtt_topic": "The full Zigbee2MQTT topic for this device, e.g. zigbee2mqtt/Living Room TRV"
         }
+      },
+      "add_receiver": {
+        "title": "Add Receiver",
+        "description": "Enter the device name, its Zigbee2MQTT topic, and model.\n\nExample topic: zigbee2mqtt/Hive Receiver",
+        "data": {
+          "device_name": "Device name",
+          "mqtt_topic": "Z2M MQTT topic",
+          "model": "Receiver model",
+          "show_heat_schedule_mode": "Show schedule mode for heating",
+          "show_water_schedule_mode": "Show schedule mode for hot water"
+        },
+        "data_description": {
+          "device_name": "A friendly name for this receiver, e.g. Hive Receiver",
+          "mqtt_topic": "The full Zigbee2MQTT topic for this device, e.g. zigbee2mqtt/Hive Receiver",
+          "model": "SLR1 = single channel, SLR2 = dual channel (heating + hot water), OTR1 = standalone"
+        }
+      },
+      "setup_groups": {
+        "title": "Room Group Manager",
+        "description": "This creates the room group manager. Add TRVs first, then create groups from the room group manager Configure menu."
       }
     },
     "abort": {
-      "already_configured": "Hive TRV Local is already configured."
+      "groups_already_configured": "Room group manager is already configured."
     }
   },
   "options": {
@@ -28,14 +58,12 @@
       "settings": {
         "title": "Settings",
         "data": {
-          "z2m_base_topic": "Zigbee2MQTT base topic",
           "boiler_entity": "Boiler / receiver entity",
           "enable_diagnostics": "Enable diagnostic logging"
         },
         "data_description": {
-          "z2m_base_topic": "The MQTT topic prefix used by Zigbee2MQTT (default: zigbee2mqtt).",
-          "boiler_entity": "Turned on when any group member calls for heat, off when none do. Supports climate, switch, and input_boolean.",
-          "enable_diagnostics": "Writes HIVE_DIAG entries to the HA log at WARNING level."
+          "boiler_entity": "Turned on when any group member calls for heat. Supports climate, switch, and input_boolean.",
+          "enable_diagnostics": "Writes extra diagnostic entries to the HA log."
         }
       },
       "groups": {
@@ -56,14 +84,12 @@
       },
       "create_group_members": {
         "title": "Create Room Group \u2014 Step 2 of 3",
-        "description": "Select TRVs for: {room_name}\n\n{count} Hive/MQTT TRV(s) detected.\n\nPick from the list below. If a TRV is missing, enter its Z2M topic manually in the text box (base topic: {base_topic}).",
+        "description": "Select TRVs for: {room_name}\n\n{count} registered TRV(s) available.",
         "data": {
-          "member_entities": "TRV entities",
-          "extra_topics": "Additional Z2M topics (optional, one per line)"
+          "member_ids": "TRV devices"
         },
         "data_description": {
-          "member_entities": "Select one or more TRV climate entities. Tick multiple to add them all to this group.",
-          "extra_topics": "For TRVs not yet in the list, enter their full Z2M topic e.g. zigbee2mqtt/Bedroom TRV"
+          "member_ids": "Select one or more TRVs to add to this group. Only registered TRVs that are not already in another group are shown."
         }
       },
       "create_group_sensors": {
@@ -82,9 +108,9 @@
       },
       "edit_group_members": {
         "title": "Edit Room Group \u2014 Step 2 of 2",
-        "description": "Editing: {room_name}\n\nBase topic: {base_topic}\nEnter Z2M topic(s), one per line or comma-separated.",
+        "description": "Editing: {room_name}",
         "data": {
-          "mqtt_topics": "Z2M device topic(s)"
+          "member_ids": "Members"
         }
       },
       "set_schedule": {
@@ -101,12 +127,12 @@
           "preset": "Schedule preset"
         },
         "data_description": {
-          "preset": "For custom slot schedules use the hive_trv_local.set_schedule service."
+          "preset": "For custom slot schedules use the hive_trv_local.group_set_schedule service."
         }
       },
       "remove_group": {
         "title": "Remove Room Group",
-        "description": "Select the group to remove.",
+        "description": "Select the group to remove. Member TRVs will be restored as individual devices.",
         "data": {
           "room_name": "Room group to remove"
         }
