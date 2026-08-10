@@ -56,12 +56,14 @@
       },
       "create_group_members": {
         "title": "Create Room Group \u2014 Step 2 of 3",
-        "description": "Room: {room_name}\n\nEnter Z2M topic(s) for the TRVs in this room, one per line or comma-separated.\nBase topic: {base_topic}\n\nDetected devices:\n{hint}",
+        "description": "Select TRVs for: {room_name}\n\n{count} Hive/MQTT TRV(s) detected.\n\nPick from the list below. If a TRV is missing, enter its Z2M topic manually in the text box (base topic: {base_topic}).",
         "data": {
-          "mqtt_topics": "Z2M device topic(s)"
+          "member_entities": "TRV entities",
+          "extra_topics": "Additional Z2M topics (optional, one per line)"
         },
         "data_description": {
-          "mqtt_topics": "Enter the full Z2M topic for each TRV, e.g. zigbee2mqtt/Living Room TRV. One per line or comma-separated."
+          "member_entities": "Select one or more TRV climate entities. Tick multiple to add them all to this group.",
+          "extra_topics": "For TRVs not yet in the list, enter their full Z2M topic e.g. zigbee2mqtt/Bedroom TRV"
         }
       },
       "create_group_sensors": {
