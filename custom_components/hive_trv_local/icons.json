@@ -1,53 +1,9 @@
 {
-  "entity": {
-    "climate": {
-      "hive_trv_local": {
-        "state_attributes": {
-          "preset_mode": {
-            "state": {
-              "antifrost": "mdi:snowflake",
-              "auto": "mdi:thermostat-auto",
-              "day": "mdi:weather-sunny",
-              "frost_guard": "mdi:snowflake-thermometer",
-              "holiday": "mdi:bag-suitcase-outline",
-              "manual": "mdi:gesture-tap",
-              "night": "mdi:weather-night",
-              "no_frost": "mdi:snowflake-melt",
-              "schedule": "mdi:calendar-clock",
-              "standby": "mdi:home-export-outline",
-              "summer": "mdi:radiator-off",
-              "vacation": "mdi:beach"
-            }
-          },
-          "fan_mode": {
-            "state": {
-              "circulate": "mdi:fan-clock",
-              "power": "mdi:fan-chevron-up",
-              "slow": "mdi:fan-chevron-down",
-              "turbo": "mdi:wind-power"
-            }
-          },
-          "swing_mode": {
-            "state": {
-              "auto": "mdi:arrow-oscillating"
-            }
-          }
-        }
-      }
-    }
-  },
   "services": {
-    "set_schedule_entity": {
-      "service": "mdi:calendar-edit"
-    },
-    "set_schedule_bypass_entity": {
-      "service": "mdi:calendar-sync"
-    },
-    "boost": {
-      "service": "mdi:rocket-launch"
-    },
-    "apply_config": {
-      "service": "mdi:cog-transfer"
-    }
+    "boost": "mdi:rocket-launch",
+    "end_boost": "mdi:stop-circle-outline",
+    "set_schedule": "mdi:calendar-clock",
+    "clear_schedule": "mdi:calendar-remove",
+    "advance_schedule": "mdi:calendar-arrow-right"
   }
 }
