@@ -190,12 +190,18 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_add_receiver(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Step 1 — browse and select a Z2M climate entity for the receiver."""
+        """Step 1 — browse and select a Z2M device for the receiver.
+
+        Shows ALL mqtt climate entities not already registered as a TRV or receiver.
+        Receivers and TRVs look identical in the entity registry — we let the user
+        pick any mqtt climate entity and then choose the model in the next step.
+        """
         errors: dict = {}
 
+        # Collect all already-registered topics (TRV and receiver both)
         already_registered: set[str] = set()
         for entry in self._async_current_entries():
-            if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_RECEIVER:
+            if entry.data.get(CONF_ENTRY_TYPE) in (ENTRY_TYPE_TRV, ENTRY_TYPE_RECEIVER):
                 already_registered.add(entry.data.get(CONF_MQTT_TOPIC, ""))
 
         from homeassistant.helpers import entity_registry as er, device_registry as dr
@@ -209,6 +215,7 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if entry.platform != "mqtt":
                 continue
             uid = entry.unique_id or ""
+            # Exclude our own group entities
             if uid.startswith("room_") and uid.endswith("_climate"):
                 continue
             topic = uid
@@ -414,25 +421,41 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
         return grouped
 
     def _registered_trv_entity_ids(self) -> list[str]:
-        """Return climate entity IDs from registered TRV device entries.
+        """Return entity IDs for all registered TRV entries."""
+        return list(self._registered_trv_map().keys())
 
-        This is the definitive fix — we look at OUR OWN config entries
-        for ENTRY_TYPE_TRV and get the entity_id from the entity registry
-        using their unique_id pattern.
+    def _registered_trv_map(self) -> dict[str, str]:
+        """Return {entity_id: device_name} for all registered TRV entries.
+
+        Looks up each TRV config entry and finds its climate entity_id via
+        the entity registry. If the entity hasn't been registered yet (HA
+        not fully started) falls back to the device_name from entry.data.
         """
         ent_reg = er.async_get(self.hass)
-        result  = []
+        result: dict[str, str] = {}
+
         for entry in self.hass.config_entries.async_entries(DOMAIN):
             if entry.data.get(CONF_ENTRY_TYPE) != ENTRY_TYPE_TRV:
                 continue
-            # Our climate entity unique_id = f"{DOMAIN}_{entry.entry_id}_climate"
+            device_name = entry.data.get(CONF_DEVICE_NAME, entry.title)
             uid = f"{DOMAIN}_{entry.entry_id}_climate"
+            # Find entity by unique_id
+            entity_id = None
             for e in ent_reg.entities.values():
                 if e.unique_id == uid and e.entity_id.startswith("climate."):
-                    result.append(e.entity_id)
+                    entity_id = e.entity_id
                     break
-        _LOGGER.debug("Registered TRV entities: %s", result)
-        return sorted(result)
+            if entity_id:
+                result[entity_id] = device_name
+            else:
+                _LOGGER.warning(
+                    "TRV %s (%s) has no climate entity yet — "
+                    "it will appear after HA fully loads",
+                    device_name, entry.entry_id
+                )
+
+        _LOGGER.debug("Registered TRV map: %s", result)
+        return result
 
     def _no_rooms_entry(self) -> config_entries.FlowResult:
         return self.async_create_entry(title="", data=self.config_entry.options)
@@ -515,10 +538,18 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
     async def async_step_create_group_members(
         self, user_input: dict | None = None
     ) -> config_entries.FlowResult:
+        """Pick TRVs from those registered with this integration.
+
+        Uses a SelectSelector listing registered TRV device names so the user
+        sees friendly names rather than entity IDs, and can pick multiple.
+        Falls back to entity selector if no registered TRVs have entity IDs yet.
+        """
         errors: dict = {}
-        registered = self._registered_trv_entity_ids()
-        grouped    = self._grouped_eids()
-        available  = [e for e in registered if e not in grouped]
+
+        # Build {entity_id: friendly_name} for registered ungrouped TRVs
+        grouped   = self._grouped_eids()
+        trv_map   = self._registered_trv_map()  # {entity_id: device_name}
+        available = {eid: name for eid, name in trv_map.items() if eid not in grouped}
 
         if user_input is not None:
             chosen = user_input.get("member_ids") or []
@@ -528,17 +559,31 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
                 self._members = chosen
                 return await self.async_step_create_group_sensors()
 
-        return self.async_show_form(
-            step_id="create_group_members",
-            data_schema=vol.Schema({
-                vol.Required("member_ids"): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="climate",
+        if available:
+            # Show as a multi-select dropdown with friendly names
+            schema = vol.Schema({
+                vol.Required("member_ids"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=eid, label=name)
+                            for eid, name in sorted(available.items(), key=lambda x: x[1])
+                        ],
                         multiple=True,
-                        include_entities=available if available else None,
+                        mode=selector.SelectSelectorMode.LIST,
                     )
                 ),
-            }),
+            })
+        else:
+            # No registered TRVs yet — show a helpful message via entity selector
+            schema = vol.Schema({
+                vol.Required("member_ids"): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="climate", multiple=True)
+                ),
+            })
+
+        return self.async_show_form(
+            step_id="create_group_members",
+            data_schema=schema,
             description_placeholders={
                 "room_name": self._room_name,
                 "count":     str(len(available)),
@@ -822,4 +867,5 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
             _LOGGER.info(
                 "Entity %s %s", entity_id, "hidden (in group)" if hide else "restored (left group)"
             )
+
 
