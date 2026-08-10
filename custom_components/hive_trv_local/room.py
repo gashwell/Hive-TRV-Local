@@ -44,6 +44,8 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         member_entity_ids: list[str],
         temp_sensor_entity_ids: list[str],
         store=None,
+        frost_weather_entity: str | None = None,
+        frost_temperature: float = 2.0,
     ) -> None:
         super().__init__(hass, _LOGGER, name=f"Hive Room {room_name}")
         self.room_id   = room_id
@@ -52,6 +54,8 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._members: list[str] = list(member_entity_ids)
         self._sensors: list[str] = list(temp_sensor_entity_ids)
+        self._frost_weather_entity = frost_weather_entity
+        self._frost_temperature    = frost_temperature
 
         # State
         self._mode:          str   = MODE_MANUAL
@@ -147,6 +151,7 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def member_temperatures(self) -> dict[str, float | None]:
+        """Return {entity_id: temperature} for all members."""
         result: dict[str, float | None] = {}
         for eid in self._members:
             state = self.hass.states.get(eid)
@@ -159,6 +164,43 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 result[eid] = None
         return result
+
+    @property
+    def member_detail(self) -> list[dict]:
+        """Return list of {name, entity_id, temperature} for card display."""
+        result = []
+        for eid in self._members:
+            state = self.hass.states.get(eid)
+            name = (state.attributes.get("friendly_name") or eid.split(".")[-1]) if state else eid
+            temp = None
+            if state:
+                cur = state.attributes.get("current_temperature")
+                try:
+                    temp = float(cur) if cur is not None else None
+                except (ValueError, TypeError):
+                    pass
+            result.append({"entity_id": eid, "name": name, "temperature": temp})
+        return result
+
+    @property
+    def outdoor_temperature(self) -> float | None:
+        """Current outdoor temperature from Open-Meteo weather entity."""
+        if not self._frost_weather_entity:
+            return None
+        state = self.hass.states.get(self._frost_weather_entity)
+        if state and state.attributes:
+            t = state.attributes.get("temperature")
+            try:
+                return float(t) if t is not None else None
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    @property
+    def frost_protection_active(self) -> bool:
+        """True if outdoor temp is at or below the frost threshold."""
+        outdoor = self.outdoor_temperature
+        return outdoor is not None and outdoor <= self._frost_temperature
 
     @property
     def heat_required(self) -> bool:
@@ -317,12 +359,29 @@ class HiveRoomCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _refresh(self) -> None:
         self.async_set_updated_data({
-            "mode":                self._mode,
-            "setpoint":            self._setpoint,
-            "current_temperature": self.current_temperature,
-            "member_temperatures": self.member_temperatures,
-            "heat_required":       self.heat_required,
-            "available":           self.available,
-            "boost_end":           self._boost_end.isoformat() if self._boost_end else None,
+            "mode":                    self._mode,
+            "setpoint":                self._setpoint,
+            "current_temperature":     self.current_temperature,
+            "member_temperatures":     self.member_temperatures,
+            "member_detail":           self.member_detail,
+            "heat_required":           self.heat_required,
+            "available":               self.available,
+            "boost_end":               self._boost_end.isoformat() if self._boost_end else None,
+            "outdoor_temperature":     self.outdoor_temperature,
+            "frost_protection_active": self.frost_protection_active,
         })
+
+        # Auto-trigger frost protection if outdoor temp drops below threshold
+        if self.frost_protection_active and self._mode != MODE_OFF:
+            _LOGGER.info(
+                "Room %s: frost protection triggered (outdoor=%.1f°C ≤ %.1f°C)",
+                self.room_name,
+                self.outdoor_temperature,
+                self._frost_temperature,
+            )
+            self.hass.async_create_task(self._svc_set_hvac("heat"))
+            self.hass.async_create_task(
+                self._svc_set_temperature(max(self._frost_temperature + 3.0, 7.0))
+            )
+
 
