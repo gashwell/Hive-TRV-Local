@@ -206,17 +206,22 @@ class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict:
         attrs: dict = {
-            "members":               self.coordinator.member_entity_ids,
-            "member_count":          len(self.coordinator.member_entity_ids),
-            "member_temperatures":   self.coordinator.member_temperatures,
-            "heat_required":         self.coordinator.heat_required,
-            "mode":                  self.coordinator.mode,
-            "schedule":              self.coordinator.schedule_slots,
-            "schedule_current_slot": self.coordinator.schedule_current_slot,
+            "members":                 self.coordinator.member_entity_ids,
+            "member_count":            len(self.coordinator.member_entity_ids),
+            "member_temperatures":     self.coordinator.member_temperatures,
+            "member_detail":           self.coordinator.member_detail,
+            "heat_required":           self.coordinator.heat_required,
+            "mode":                    self.coordinator.mode,
+            "schedule":                self.coordinator.schedule_slots,
+            "schedule_current_slot":   self.coordinator.schedule_current_slot,
         }
         if self.coordinator.mode == MODE_BOOST:
             attrs["boost_ends"]             = self.coordinator.boost_end_time
             attrs["boost_remaining_minutes"]= self.coordinator.boost_remaining_minutes
+        if self.coordinator.outdoor_temperature is not None:
+            attrs["outdoor_temperature"]    = self.coordinator.outdoor_temperature
+        if self.coordinator.frost_protection_active:
+            attrs["frost_protection_active"]= True
         return {k: v for k, v in attrs.items() if v is not None}
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -236,3 +241,4 @@ class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
 
     async def async_turn_off(self) -> None:
         await self.coordinator.async_set_mode(MODE_OFF)
+
