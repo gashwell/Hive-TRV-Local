@@ -301,7 +301,30 @@ class HiveTRVCard extends HTMLElement {
 
 customElements.define("hive-trv-card",HiveTRVCard);
 window.customCards=window.customCards||[];
-window.customCards.push({type:"hive-trv-card",name:"Hive TRV Card",
-  description:`v${CARD_VERSION} — Individual Hive/Danfoss TRV card`,preview:true,
-  documentationURL:"https://github.com/gashwell/Hive-TRV-Local-v2"});
+window.customCards.push({
+  type:"hive-trv-card",
+  name:"Hive TRV Card",
+  description:`v${CARD_VERSION} — Individual Hive/Danfoss TRV card`,
+  preview:true,
+  documentationURL:"https://github.com/gashwell/Hive-TRV-Local-v2",
+  getEntitySuggestion:(hass,entityId)=>{
+    if(!entityId.startsWith("climate.")) return null;
+    const s=hass.states[entityId];
+    if(!s) return null;
+    const a=s.attributes;
+    // Must be an individual TRV (has pi_heating_demand or battery) and NOT a group
+    const isTRV=(a.pi_heating_demand!==undefined||a.battery!==undefined);
+    const isGroup=Array.isArray(a.members);
+    if(!isTRV||isGroup) return null;
+    const slug=entityId.replace("climate.","");
+    const cfg={type:"custom:hive-trv-card",entity:entityId};
+    if(hass.states[`sensor.${slug}_battery`]) cfg.battery_entity=`sensor.${slug}_battery`;
+    if(hass.states[`sensor.${slug}_pi_heating_demand`]) cfg.demand_entity=`sensor.${slug}_pi_heating_demand`;
+    else if(hass.states[`sensor.${slug}_heating_demand`]) cfg.demand_entity=`sensor.${slug}_heating_demand`;
+    if(hass.states[`select.${slug}_mounting_orientation`]) cfg.orientation_entity=`select.${slug}_mounting_orientation`;
+    else if(hass.states[`select.${slug}_thermostat_orientation`]) cfg.orientation_entity=`select.${slug}_thermostat_orientation`;
+    return {config:cfg};
+  },
+});
 console.info(`%c HIVE-TRV-CARD %c v${CARD_VERSION} `,"color:#f97316;font-weight:700;background:#000;padding:2px 4px","background:#f97316;color:#fff;padding:2px 4px");
+
