@@ -72,7 +72,8 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._room_name:    str       = ""
-        self._members:      list[str] = []  # Z2M topics
+        self._members:      list[str] = []  # entity IDs
+        self._member_topics: list[str] = []  # raw Z2M topics for display
         self._sensors:      list[str] = []  # HA sensor entity IDs
         self._edit_room_id: str       = ""
         self._edit_name:    str       = ""
@@ -278,28 +279,60 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict | None = None
     ) -> config_entries.FlowResult:
         errors: dict = {}
-        base            = self._base_topic()
-        discovered      = await self._discovered_z2m_topics()
-        grouped_topics  = self._grouped_topics()
-        available       = [t for t in discovered if t not in grouped_topics]
 
         if user_input is not None:
-            raw = user_input.get("mqtt_topics", "")
-            # Accept comma-separated topics entered manually or selected from list
-            topics = [t.strip() for t in raw.replace("\n", ",").split(",") if t.strip()]
-            if not topics:
-                errors["mqtt_topics"] = "required"
+            # Collect entity IDs from the entity picker
+            entity_ids = user_input.get("member_entities") or []
+            # Also parse any manually typed topics
+            raw_extra = user_input.get("extra_topics", "").strip()
+            extra_topics = [t.strip() for t in raw_extra.replace("\n", ",").split(",") if t.strip()]
+            extra_entities = self._topics_to_entity_ids(extra_topics)
+            # Combine, deduplicate
+            all_entities = list(dict.fromkeys(entity_ids + extra_entities))
+            if not all_entities:
+                errors["member_entities"] = "required"
             else:
-                self._members = topics
+                # Store entity IDs directly — no topic resolution needed for picked entities
+                self._members = all_entities
+                # Store topics for display in edit
+                self._member_topics = extra_topics
                 return await self.async_step_create_group_sensors()
 
-        # Show available topics as a helper hint
-        hint_lines = "\n".join(f"• {t}" for t in available) if available else f"None detected yet — Z2M base topic: {base}"
+        # Build list of non-grouped mqtt climate entities for the picker
+        from homeassistant.helpers import entity_registry as er
+        ent_reg = er.async_get(self.hass)
+        group_eids = set()
+        for rd in self._all_rooms().values():
+            group_eids.update(rd.get("members", []))
+
+        mqtt_climate_eids = []
+        for entry in ent_reg.entities.values():
+            if entry.entity_id.split(".")[0] != "climate":
+                continue
+            if entry.platform != "mqtt":
+                continue
+            uid = entry.unique_id or ""
+            if uid.startswith("room_") and uid.endswith("_climate"):
+                continue
+            if entry.entity_id not in group_eids:
+                mqtt_climate_eids.append(entry.entity_id)
+
+        _LOGGER.warning(
+            "Member picker: found %d mqtt climate entity(ies): %s",
+            len(mqtt_climate_eids), mqtt_climate_eids
+        )
 
         return self.async_show_form(
             step_id="create_group_members",
             data_schema=vol.Schema({
-                vol.Required("mqtt_topics"): selector.TextSelector(
+                vol.Optional("member_entities"): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="climate",
+                        multiple=True,
+                        include_entities=mqtt_climate_eids if mqtt_climate_eids else None,
+                    )
+                ),
+                vol.Optional("extra_topics"): selector.TextSelector(
                     selector.TextSelectorConfig(
                         multiline=True,
                         type=selector.TextSelectorType.TEXT,
@@ -308,8 +341,8 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
             }),
             description_placeholders={
                 "room_name":  self._room_name,
-                "base_topic": base,
-                "hint":       hint_lines,
+                "base_topic": self._base_topic(),
+                "count":      str(len(mqtt_climate_eids)),
             },
             errors=errors,
         )
@@ -557,3 +590,4 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
                 ),
             }),
         )
+
