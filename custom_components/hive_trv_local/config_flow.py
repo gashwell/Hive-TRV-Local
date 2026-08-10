@@ -400,6 +400,8 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
         self._sensors:      list[str] = []
         self._edit_room_id: str       = ""
         self._edit_name:    str       = ""
+        self._frost_weather: str | None = None
+        self._frost_temp:   float     = 2.0
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -596,7 +598,7 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         if user_input is not None:
             self._sensors = user_input.get("temp_sensors") or []
-            return await self._do_create_group()
+            return await self.async_step_create_group_frost()
         return self.async_show_form(
             step_id="create_group_sensors",
             data_schema=vol.Schema({
@@ -612,19 +614,84 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
             },
         )
 
+    def _open_meteo_weather_entities(self) -> list[str]:
+        """Return weather entity IDs from the open_meteo integration."""
+        from homeassistant.helpers import entity_registry as er
+        ent_reg = er.async_get(self.hass)
+        result = []
+        for entry in ent_reg.entities.values():
+            if entry.platform == "open_meteo" and entry.entity_id.startswith("weather."):
+                result.append(entry.entity_id)
+        # Also check via config entries
+        for ce in self.hass.config_entries.async_entries("open_meteo"):
+            if ce.state.value == "loaded":
+                for e in ent_reg.entities.values():
+                    if e.config_entry_id == ce.entry_id and e.entity_id not in result:
+                        result.append(e.entity_id)
+        return sorted(result)
+
+    async def async_step_create_group_frost(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        """Step 4 of 4 — frost protection via Open-Meteo (optional)."""
+        if user_input is not None:
+            self._frost_weather = user_input.get("frost_weather_entity") or None
+            self._frost_temp    = float(user_input.get("frost_temperature", 2.0))
+            return await self._do_create_group()
+
+        weather_entities = self._open_meteo_weather_entities()
+        open_meteo_available = len(weather_entities) > 0
+
+        schema: dict = {
+            vol.Optional(
+                "frost_temperature",
+                default=2.0,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-10, max=10, step=0.5,
+                    unit_of_measurement="°C",
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            ),
+        }
+
+        if open_meteo_available:
+            schema[vol.Optional("frost_weather_entity")] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    include_entities=weather_entities,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="create_group_frost",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "room_name":  self._room_name,
+                "open_meteo": "Open-Meteo detected — select a weather entity to use as the frost protection source." if open_meteo_available else "Open-Meteo not installed. Install it via HACS to enable weather-based frost protection.",
+                "available":  "true" if open_meteo_available else "false",
+            },
+        )
+
     async def _do_create_group(self) -> config_entries.FlowResult:
         store   = self._store()
         room_id = str(uuid.uuid4())
         data    = {
-            "name":         self._room_name,
-            "members":      self._members,
-            "temp_sensors": self._sensors,
-            "schedule":     [],
+            "name":              self._room_name,
+            "members":           self._members,
+            "temp_sensors":      self._sensors,
+            "schedule":          [],
+            "frost_weather":     self._frost_weather,
+            "frost_temperature": self._frost_temp,
         }
         if store:
             await store.async_save_room(room_id, data)
 
-        # Suppress individual climate entities for grouped TRVs
+        _LOGGER.info(
+            "Creating group %r with members=%s, frost_weather=%s",
+            self._room_name, self._members, self._frost_weather
+        )
+
+        # Hide individual TRV climate entities — they are now managed via the group
         self._suppress_member_entities(self._members, hide=True)
 
         self.hass.bus.async_fire(EVENT_ROOM_ADDED, {
@@ -867,5 +934,6 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
             _LOGGER.info(
                 "Entity %s %s", entity_id, "hidden (in group)" if hide else "restored (left group)"
             )
+
 
 
