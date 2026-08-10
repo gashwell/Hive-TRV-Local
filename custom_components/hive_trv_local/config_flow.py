@@ -1,8 +1,13 @@
-"""Config flow for Hive TRV Local v3.
+"""Config flow for Hive TRV Local v4.
 
-Member selection uses Z2M MQTT topics directly — no entity registry detection.
-The user types or picks Z2M device topics (e.g. zigbee2mqtt/Living Room TRV)
-and we resolve them to HA entity IDs at group creation time.
+Three entry types share one domain:
+  - TRV device    (multi-instance, one per physical TRV)
+  - Receiver      (multi-instance, one per SLR1/SLR2/OTR1)
+  - Groups        (single instance — room group manager)
+
+The initial setup shows a menu: Add TRV / Add Receiver / Manage Groups.
+Each creates a separate config entry. This is similar to how andrew-codechimp's
+integration works per device, but extended with the group management layer.
 """
 from __future__ import annotations
 
@@ -12,50 +17,144 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.components import mqtt
 from homeassistant.core import callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import entity_registry as er, selector
 
 from .const import (
-    CONF_BOILER_ENTITY, CONF_ENABLE_DIAGNOSTICS, CONF_Z2M_BASE_TOPIC,
-    CONFIG_VERSION, DATA_BOILER, DATA_STORE, DOMAIN,
-    ENTRY_DEFAULTS, EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED, EVENT_ROOM_UPDATED,
+    CONF_BOILER_ENTITY, CONF_DEVICE_NAME, CONF_ENABLE_DIAG,
+    CONF_ENTRY_TYPE, CONF_MODEL, CONF_MQTT_TOPIC,
+    CONF_SHOW_HEAT_SCHED, CONF_SHOW_WATER_SCHED,
+    CONFIG_VERSION_DEVICE, CONFIG_VERSION_GROUPS,
+    DATA_BOILER, DATA_STORE, DOMAIN,
+    ENTRY_TYPE_GROUPS, ENTRY_TYPE_RECEIVER, ENTRY_TYPE_TRV,
+    EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED, EVENT_ROOM_UPDATED,
+    MODEL_OTR1, MODEL_SLR1, MODEL_SLR2, RECEIVER_MODELS,
 )
 
 _LOGGER = logging.getLogger(f"custom_components.{DOMAIN}.config_flow")
 
 
-class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Single-instance config flow."""
+# ── Main config flow (entry point) ─────────────────────────────────────────────
 
-    VERSION = CONFIG_VERSION
+class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Entry-point flow — shows menu to add TRV, receiver, or group manager."""
+
+    VERSION = CONFIG_VERSION_DEVICE
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        await self.async_set_unique_id(DOMAIN)
-        self._abort_if_unique_id_configured()
+        return self.async_show_menu(
+            step_id="user",
+            menu_options={
+                "add_trv":      "Add a TRV",
+                "add_receiver": "Add a receiver (SLR1 / SLR2 / OTR1)",
+                "setup_groups": "Set up room group manager",
+            },
+        )
 
+    # ── Add TRV ────────────────────────────────────────────────────────────────
+
+    async def async_step_add_trv(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        errors: dict = {}
         if user_input is not None:
-            return self.async_create_entry(
-                title="Hive TRV Local",
-                data={
-                    **ENTRY_DEFAULTS,
-                    CONF_Z2M_BASE_TOPIC: user_input.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt"),
-                },
-            )
+            topic = user_input[CONF_MQTT_TOPIC].strip()
+            name  = user_input[CONF_DEVICE_NAME].strip()
+            if not topic:
+                errors[CONF_MQTT_TOPIC] = "required"
+            elif not name:
+                errors[CONF_DEVICE_NAME] = "required"
+            else:
+                return self.async_create_entry(
+                    title=name,
+                    data={
+                        CONF_ENTRY_TYPE: ENTRY_TYPE_TRV,
+                        CONF_MQTT_TOPIC: topic,
+                        CONF_DEVICE_NAME: name,
+                        CONF_MODEL: "TRV",
+                    },
+                )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="add_trv",
             data_schema=vol.Schema({
-                vol.Optional(CONF_Z2M_BASE_TOPIC, default="zigbee2mqtt"): selector.TextSelector(
+                vol.Required(CONF_DEVICE_NAME): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+                vol.Required(CONF_MQTT_TOPIC): selector.TextSelector(
                     selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
                 ),
             }),
-            description_placeholders={
-                "info": "Enter your Zigbee2MQTT base topic. "
-                        "Default is 'zigbee2mqtt'. "
-                        "Configure room groups after installation via Configure."
+            errors=errors,
+        )
+
+    # ── Add Receiver ───────────────────────────────────────────────────────────
+
+    async def async_step_add_receiver(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        errors: dict = {}
+        if user_input is not None:
+            topic = user_input[CONF_MQTT_TOPIC].strip()
+            name  = user_input[CONF_DEVICE_NAME].strip()
+            model = user_input[CONF_MODEL]
+            if not topic:
+                errors[CONF_MQTT_TOPIC] = "required"
+            elif not name:
+                errors[CONF_DEVICE_NAME] = "required"
+            else:
+                return self.async_create_entry(
+                    title=name,
+                    data={
+                        CONF_ENTRY_TYPE:      ENTRY_TYPE_RECEIVER,
+                        CONF_MQTT_TOPIC:      topic,
+                        CONF_DEVICE_NAME:     name,
+                        CONF_MODEL:           model,
+                        CONF_SHOW_HEAT_SCHED: user_input.get(CONF_SHOW_HEAT_SCHED, True),
+                        CONF_SHOW_WATER_SCHED:user_input.get(CONF_SHOW_WATER_SCHED, True),
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="add_receiver",
+            data_schema=vol.Schema({
+                vol.Required(CONF_DEVICE_NAME): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+                vol.Required(CONF_MQTT_TOPIC): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+                vol.Required(CONF_MODEL, default=MODEL_SLR1): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=RECEIVER_MODELS,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_SHOW_HEAT_SCHED, default=True): selector.BooleanSelector(),
+                vol.Optional(CONF_SHOW_WATER_SCHED, default=True): selector.BooleanSelector(),
+            }),
+            errors=errors,
+        )
+
+    # ── Setup Groups ───────────────────────────────────────────────────────────
+
+    async def async_step_setup_groups(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Create the single group manager entry (only one allowed)."""
+        # Check if groups entry already exists
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GROUPS:
+                return self.async_abort(reason="groups_already_configured")
+
+        return self.async_create_entry(
+            title="Room Groups",
+            data={
+                CONF_ENTRY_TYPE:    ENTRY_TYPE_GROUPS,
+                CONF_BOILER_ENTITY: None,
+                CONF_ENABLE_DIAG:   False,
             },
         )
 
@@ -63,18 +162,62 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> "HiveTRVLocalOptionsFlow":
-        return HiveTRVLocalOptionsFlow()
+    ) -> config_entries.OptionsFlow:
+        entry_type = config_entry.data.get(CONF_ENTRY_TYPE)
+        if entry_type in (ENTRY_TYPE_TRV, ENTRY_TYPE_RECEIVER):
+            return HiveDeviceOptionsFlow()
+        return HiveGroupsOptionsFlow()
 
 
-class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — settings and group management."""
+# ── Device options flow ────────────────────────────────────────────────────────
+
+class HiveDeviceOptionsFlow(config_entries.OptionsFlow):
+    """Options for a TRV or receiver device entry."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        entry_type = self.config_entry.data.get(CONF_ENTRY_TYPE)
+        errors: dict = {}
+
+        if user_input is not None:
+            return self.async_create_entry(title="", data={
+                **self.config_entry.data,
+                CONF_DEVICE_NAME:     user_input.get(CONF_DEVICE_NAME, self.config_entry.title),
+                CONF_MQTT_TOPIC:      user_input.get(CONF_MQTT_TOPIC, ""),
+                CONF_SHOW_HEAT_SCHED: user_input.get(CONF_SHOW_HEAT_SCHED, True),
+                CONF_SHOW_WATER_SCHED:user_input.get(CONF_SHOW_WATER_SCHED, True),
+            })
+
+        data = self.config_entry.data
+        schema = {
+            vol.Required(CONF_DEVICE_NAME, default=data.get(CONF_DEVICE_NAME, "")): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+            ),
+            vol.Required(CONF_MQTT_TOPIC, default=data.get(CONF_MQTT_TOPIC, "")): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+            ),
+        }
+        if entry_type == ENTRY_TYPE_RECEIVER:
+            schema[vol.Optional(CONF_SHOW_HEAT_SCHED,  default=data.get(CONF_SHOW_HEAT_SCHED,  True))] = selector.BooleanSelector()
+            schema[vol.Optional(CONF_SHOW_WATER_SCHED, default=data.get(CONF_SHOW_WATER_SCHED, True))] = selector.BooleanSelector()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+
+# ── Groups options flow ────────────────────────────────────────────────────────
+
+class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for the group manager entry."""
 
     def __init__(self) -> None:
         self._room_name:    str       = ""
-        self._members:      list[str] = []  # entity IDs
-        self._member_topics: list[str] = []  # raw Z2M topics for display
-        self._sensors:      list[str] = []  # HA sensor entity IDs
+        self._members:      list[str] = []
+        self._sensors:      list[str] = []
         self._edit_room_id: str       = ""
         self._edit_name:    str       = ""
 
@@ -89,116 +232,46 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
         s = self._store()
         return s.get_all_rooms() if s else {}
 
-    def _grouped_topics(self, exclude: str | None = None) -> set[str]:
+    def _grouped_eids(self, exclude: str | None = None) -> set[str]:
         grouped: set[str] = set()
         for rid, rd in self._all_rooms().items():
             if rid == exclude:
                 continue
-            grouped.update(rd.get("mqtt_topics", []))
+            grouped.update(rd.get("members", []))
         return grouped
 
-    def _base_topic(self) -> str:
-        return (self.config_entry.options or self.config_entry.data).get(
-            CONF_Z2M_BASE_TOPIC, "zigbee2mqtt"
-        )
+    def _registered_trv_entity_ids(self) -> list[str]:
+        """Return climate entity IDs from registered TRV device entries.
 
-    async def _discovered_z2m_topics(self) -> list[str]:
-        """Return Z2M device topics by querying hass.states for MQTT climate entities.
-
-        Looks at all climate entities in hass.states and returns those whose
-        entity_id is registered on the mqtt platform — no model filtering.
-        Also returns the raw topic from the entity's unique_id where available.
+        This is the definitive fix — we look at OUR OWN config entries
+        for ENTRY_TYPE_TRV and get the entity_id from the entity registry
+        using their unique_id pattern.
         """
-        from homeassistant.helpers import entity_registry as er
-        base = self._base_topic()
         ent_reg = er.async_get(self.hass)
-        topics: list[str] = []
-        seen: set[str] = set()
-
-        for entry in ent_reg.entities.values():
-            if entry.entity_id.split(".")[0] != "climate":
+        result  = []
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get(CONF_ENTRY_TYPE) != ENTRY_TYPE_TRV:
                 continue
-            if entry.platform != "mqtt":
-                continue
-            # Exclude our own group entities
-            uid = entry.unique_id or ""
-            if uid.startswith("room_") and uid.endswith("_climate"):
-                continue
-            # Z2M unique_ids are typically the topic: "zigbee2mqtt/DeviceName"
-            # Extract device name from uid if it starts with our base topic
-            if uid.startswith(f"{base}/"):
-                topic = uid  # full topic e.g. "zigbee2mqtt/Living Room TRV"
-            else:
-                # Fall back to constructing from the entity_id slug
-                topic = f"{base}/{entry.entity_id.replace('climate.', '').replace('_', ' ')}"
-            if topic not in seen:
-                seen.add(topic)
-                topics.append(topic)
-
-        # Also check states for any that slipped through
-        for entity_id, state in self.hass.states.items():
-            if not entity_id.startswith("climate."):
-                continue
-            ent = ent_reg.async_get(entity_id)
-            if not ent or ent.platform != "mqtt":
-                continue
-            uid = ent.unique_id or ""
-            if uid.startswith("room_") and uid.endswith("_climate"):
-                continue
-            if uid.startswith(f"{base}/") and uid not in seen:
-                seen.add(uid)
-                topics.append(uid)
-
-        _LOGGER.warning("Z2M topic discovery: found %d topic(s): %s", len(topics), topics)
-        return sorted(topics)
-
-    def _topic_to_entity_id(self, topic: str) -> str | None:
-        """Resolve a Z2M topic to a HA climate entity_id via the entity registry."""
-        from homeassistant.helpers import entity_registry as er
-        ent_reg = er.async_get(self.hass)
-        # Z2M sets unique_id = topic for climate entities
-        for entry in ent_reg.entities.values():
-            if entry.entity_id.split(".")[0] != "climate":
-                continue
-            if (entry.unique_id or "") == topic:
-                return entry.entity_id
-        # Fallback: try topic as unique_id without base
-        device_name = topic.split("/", 1)[-1] if "/" in topic else topic
-        for entry in ent_reg.entities.values():
-            if entry.entity_id.split(".")[0] != "climate":
-                continue
-            uid = entry.unique_id or ""
-            if device_name.lower() in uid.lower():
-                return entry.entity_id
-        return None
-
-    def _topics_to_entity_ids(self, topics: list[str]) -> list[str]:
-        """Convert a list of Z2M topics to HA entity IDs, logging any failures."""
-        result = []
-        for topic in topics:
-            eid = self._topic_to_entity_id(topic)
-            if eid:
-                result.append(eid)
-                _LOGGER.info("Topic resolved: %s → %s", topic, eid)
-            else:
-                _LOGGER.warning(
-                    "Topic %s could not be resolved to a climate entity — "
-                    "check Z2M is running and the device has been seen at least once",
-                    topic,
-                )
-        return result
+            # Our climate entity unique_id = f"{DOMAIN}_{entry.entry_id}_climate"
+            uid = f"{DOMAIN}_{entry.entry_id}_climate"
+            for e in ent_reg.entities.values():
+                if e.unique_id == uid and e.entity_id.startswith("climate."):
+                    result.append(e.entity_id)
+                    break
+        _LOGGER.debug("Registered TRV entities: %s", result)
+        return sorted(result)
 
     def _no_rooms_entry(self) -> config_entries.FlowResult:
         return self.async_create_entry(title="", data=self.config_entry.options)
 
-    # ── Top-level menu ─────────────────────────────────────────────────────────
+    # ── Top menu ───────────────────────────────────────────────────────────────
 
     async def async_step_init(self, _=None) -> config_entries.FlowResult:
         return self.async_show_menu(
             step_id="init",
             menu_options={
-                "settings": "Settings (boiler, Z2M topic, diagnostics)",
-                "groups":   "Manage room groups",
+                "settings":     "Settings (boiler, diagnostics)",
+                "groups":       "Manage room groups",
             },
         )
 
@@ -213,9 +286,8 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
                 bm.update_boiler_entity(user_input.get(CONF_BOILER_ENTITY) or None)
             return self.async_create_entry(title="", data={
                 **self.config_entry.options,
-                CONF_BOILER_ENTITY:      user_input.get(CONF_BOILER_ENTITY) or None,
-                CONF_ENABLE_DIAGNOSTICS: user_input.get(CONF_ENABLE_DIAGNOSTICS, False),
-                CONF_Z2M_BASE_TOPIC:     user_input.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt"),
+                CONF_BOILER_ENTITY: user_input.get(CONF_BOILER_ENTITY) or None,
+                CONF_ENABLE_DIAG:   user_input.get(CONF_ENABLE_DIAG, False),
             })
 
         opts = {**self.config_entry.data, **(self.config_entry.options or {})}
@@ -223,25 +295,19 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
             step_id="settings",
             data_schema=vol.Schema({
                 vol.Optional(
-                    CONF_Z2M_BASE_TOPIC,
-                    description={"suggested_value": opts.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")},
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
-                ),
-                vol.Optional(
                     CONF_BOILER_ENTITY,
                     description={"suggested_value": opts.get(CONF_BOILER_ENTITY)},
                 ): selector.EntitySelector(selector.EntitySelectorConfig(
                     domain=["climate", "switch", "input_boolean"]
                 )),
                 vol.Optional(
-                    CONF_ENABLE_DIAGNOSTICS,
-                    default=opts.get(CONF_ENABLE_DIAGNOSTICS, False),
+                    CONF_ENABLE_DIAG,
+                    default=opts.get(CONF_ENABLE_DIAG, False),
                 ): selector.BooleanSelector(),
             }),
         )
 
-    # ── Group management menu ──────────────────────────────────────────────────
+    # ── Groups menu ────────────────────────────────────────────────────────────
 
     async def async_step_groups(self, _=None) -> config_entries.FlowResult:
         return self.async_show_menu(
@@ -269,9 +335,7 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_create_group_members()
         return self.async_show_form(
             step_id="create_group",
-            data_schema=vol.Schema({
-                vol.Required("room_name"): selector.TextSelector(),
-            }),
+            data_schema=vol.Schema({vol.Required("room_name"): selector.TextSelector()}),
             errors=errors,
         )
 
@@ -279,70 +343,32 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict | None = None
     ) -> config_entries.FlowResult:
         errors: dict = {}
+        registered = self._registered_trv_entity_ids()
+        grouped    = self._grouped_eids()
+        available  = [e for e in registered if e not in grouped]
 
         if user_input is not None:
-            # Collect entity IDs from the entity picker
-            entity_ids = user_input.get("member_entities") or []
-            # Also parse any manually typed topics
-            raw_extra = user_input.get("extra_topics", "").strip()
-            extra_topics = [t.strip() for t in raw_extra.replace("\n", ",").split(",") if t.strip()]
-            extra_entities = self._topics_to_entity_ids(extra_topics)
-            # Combine, deduplicate
-            all_entities = list(dict.fromkeys(entity_ids + extra_entities))
-            if not all_entities:
-                errors["member_entities"] = "required"
+            chosen = user_input.get("member_ids") or []
+            if not chosen:
+                errors["member_ids"] = "required"
             else:
-                # Store entity IDs directly — no topic resolution needed for picked entities
-                self._members = all_entities
-                # Store topics for display in edit
-                self._member_topics = extra_topics
+                self._members = chosen
                 return await self.async_step_create_group_sensors()
-
-        # Build list of non-grouped mqtt climate entities for the picker
-        from homeassistant.helpers import entity_registry as er
-        ent_reg = er.async_get(self.hass)
-        group_eids = set()
-        for rd in self._all_rooms().values():
-            group_eids.update(rd.get("members", []))
-
-        mqtt_climate_eids = []
-        for entry in ent_reg.entities.values():
-            if entry.entity_id.split(".")[0] != "climate":
-                continue
-            if entry.platform != "mqtt":
-                continue
-            uid = entry.unique_id or ""
-            if uid.startswith("room_") and uid.endswith("_climate"):
-                continue
-            if entry.entity_id not in group_eids:
-                mqtt_climate_eids.append(entry.entity_id)
-
-        _LOGGER.warning(
-            "Member picker: found %d mqtt climate entity(ies): %s",
-            len(mqtt_climate_eids), mqtt_climate_eids
-        )
 
         return self.async_show_form(
             step_id="create_group_members",
             data_schema=vol.Schema({
-                vol.Optional("member_entities"): selector.EntitySelector(
+                vol.Required("member_ids"): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="climate",
                         multiple=True,
-                        include_entities=mqtt_climate_eids if mqtt_climate_eids else None,
-                    )
-                ),
-                vol.Optional("extra_topics"): selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        multiline=True,
-                        type=selector.TextSelectorType.TEXT,
+                        include_entities=available if available else None,
                     )
                 ),
             }),
             description_placeholders={
-                "room_name":  self._room_name,
-                "base_topic": self._base_topic(),
-                "count":      str(len(mqtt_climate_eids)),
+                "room_name": self._room_name,
+                "count":     str(len(available)),
             },
             errors=errors,
         )
@@ -369,19 +395,20 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def _do_create_group(self) -> config_entries.FlowResult:
-        store    = self._store()
-        room_id  = str(uuid.uuid4())
-        # Resolve topics to entity IDs now
-        entities = self._topics_to_entity_ids(self._members)
-        data = {
+        store   = self._store()
+        room_id = str(uuid.uuid4())
+        data    = {
             "name":         self._room_name,
-            "mqtt_topics":  self._members,   # store raw topics for display/edit
-            "members":      entities,         # resolved entity IDs for control
+            "members":      self._members,
             "temp_sensors": self._sensors,
             "schedule":     [],
         }
         if store:
             await store.async_save_room(room_id, data)
+
+        # Suppress individual climate entities for grouped TRVs
+        self._suppress_member_entities(self._members, hide=True)
+
         self.hass.bus.async_fire(EVENT_ROOM_ADDED, {
             "entry_id":  self.config_entry.entry_id,
             "room_id":   room_id,
@@ -422,47 +449,50 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict | None = None
     ) -> config_entries.FlowResult:
         errors: dict = {}
-        room_data     = self._all_rooms().get(self._edit_room_id, {})
-        current_topics = room_data.get("mqtt_topics", [])
-        base           = self._base_topic()
+        current       = self._all_rooms().get(self._edit_room_id, {}).get("members", [])
+        registered    = self._registered_trv_entity_ids()
+        other_grouped = self._grouped_eids(exclude=self._edit_room_id)
+        available     = [e for e in registered if e not in other_grouped]
+        selectable    = sorted(set(current) | set(available))
 
         if user_input is not None:
-            raw    = user_input.get("mqtt_topics", "")
-            topics = [t.strip() for t in raw.replace("\n", ",").split(",") if t.strip()]
-            if not topics:
-                errors["mqtt_topics"] = "required"
+            new_members = user_input.get("member_ids") or []
+            if not new_members:
+                errors["member_ids"] = "required"
             else:
-                entities = self._topics_to_entity_ids(topics)
                 store = self._store()
-                rd    = dict(room_data)
-                rd["mqtt_topics"] = topics
-                rd["members"]     = entities
+                rd    = dict(self._all_rooms().get(self._edit_room_id, {}))
+                rd["members"] = new_members
                 if store:
                     await store.async_save_room(self._edit_room_id, rd)
+
+                # Restore entities that left, suppress entities that joined
+                removed = [m for m in current if m not in new_members]
+                added   = [m for m in new_members if m not in current]
+                self._suppress_member_entities(removed, hide=False)
+                self._suppress_member_entities(added, hide=True)
+
                 self.hass.bus.async_fire(EVENT_ROOM_UPDATED, {
-                    "entry_id":    self.config_entry.entry_id,
-                    "room_id":     self._edit_room_id,
-                    "new_members": entities,
+                    "entry_id":        self.config_entry.entry_id,
+                    "room_id":         self._edit_room_id,
+                    "new_members":     new_members,
+                    "added_members":   added,
+                    "removed_members": removed,
                 })
                 return self.async_create_entry(title="", data=self.config_entry.options)
 
         return self.async_show_form(
             step_id="edit_group_members",
             data_schema=vol.Schema({
-                vol.Required(
-                    "mqtt_topics",
-                    description={"suggested_value": ", ".join(current_topics)},
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        multiline=True,
-                        type=selector.TextSelectorType.TEXT,
+                vol.Required("member_ids", default=current): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="climate",
+                        multiple=True,
+                        include_entities=selectable if selectable else None,
                     )
                 ),
             }),
-            description_placeholders={
-                "room_name":  self._edit_name,
-                "base_topic": base,
-            },
+            description_placeholders={"room_name": self._edit_name},
             errors=errors,
         )
 
@@ -521,10 +551,8 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
             store    = self._store()
             current  = self._all_rooms().get(self._edit_room_id, {}).get("schedule", [])
             schedule = [] if preset == "clear" else PRESETS.get(preset, current)
-
             if store and preset != "keep":
                 await store.async_set_room_schedule(self._edit_room_id, schedule)
-
             ed = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
             rc = ed.get("rooms", {}).get(self._edit_room_id)
             if rc:
@@ -532,7 +560,6 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
                     self.hass.async_create_task(rc.async_set_schedule(schedule))
                 else:
                     rc.clear_schedule()
-
             return self.async_create_entry(title="", data=self.config_entry.options)
 
         n = len(self._all_rooms().get(self._edit_room_id, {}).get("schedule", []))
@@ -571,6 +598,8 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
                     if rd.get("name") == chosen:
                         if store:
                             await store.async_remove_room(rid)
+                        # Restore all member climate entities
+                        self._suppress_member_entities(rd.get("members", []), hide=False)
                         self.hass.bus.async_fire(EVENT_ROOM_REMOVED, {
                             "entry_id":      self.config_entry.entry_id,
                             "room_id":       rid,
@@ -591,3 +620,32 @@ class HiveTRVLocalOptionsFlow(config_entries.OptionsFlow):
             }),
         )
 
+    # ── Entity suppression ─────────────────────────────────────────────────────
+
+    def _suppress_member_entities(self, entity_ids: list[str], hide: bool) -> None:
+        """Hide or restore individual TRV climate entities.
+
+        When a TRV joins a group its individual climate entity is hidden
+        (hidden_by = HIDDEN_BY_INTEGRATION). When it leaves the group the
+        entity is restored.
+        """
+        from homeassistant.helpers import entity_registry as er
+        from homeassistant.helpers.entity_registry import RegistryEntryHider
+
+        ent_reg = er.async_get(self.hass)
+        for entity_id in entity_ids:
+            entry = ent_reg.async_get(entity_id)
+            if entry is None:
+                continue
+            if hide:
+                ent_reg.async_update_entity(
+                    entity_id,
+                    hidden_by=RegistryEntryHider.INTEGRATION,
+                )
+            else:
+                # Only restore if we were the ones who hid it
+                if entry.hidden_by == RegistryEntryHider.INTEGRATION:
+                    ent_reg.async_update_entity(entity_id, hidden_by=None)
+            _LOGGER.info(
+                "Entity %s %s", entity_id, "hidden (in group)" if hide else "restored (left group)"
+            )
