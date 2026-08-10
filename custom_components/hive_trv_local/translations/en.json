@@ -10,36 +10,55 @@
         }
       },
       "add_trv": {
-        "title": "Add TRV",
-        "description": "Enter the device name and its Zigbee2MQTT topic.\n\nExample topic: zigbee2mqtt/Living Room TRV",
+        "title": "Add TRV \u2014 Step 1 of 2",
+        "description": "{hint}",
         "data": {
-          "device_name": "Device name",
-          "mqtt_topic": "Z2M MQTT topic"
+          "z2m_entity": "Select a discovered TRV",
+          "mqtt_topic": "Or enter topic manually"
         },
         "data_description": {
-          "device_name": "A friendly name for this TRV, e.g. Living Room TRV",
-          "mqtt_topic": "The full Zigbee2MQTT topic for this device, e.g. zigbee2mqtt/Living Room TRV"
+          "z2m_entity": "TRVs already registered with Zigbee2MQTT and visible in Home Assistant.",
+          "mqtt_topic": "Full Z2M topic if not in the list above, e.g. zigbee2mqtt/Living Room TRV"
         }
       },
       "add_receiver": {
-        "title": "Add Receiver",
-        "description": "Enter the device name, its Zigbee2MQTT topic, and model.\n\nExample topic: zigbee2mqtt/Hive Receiver",
+        "title": "Add Receiver \u2014 Step 1 of 2",
+        "description": "{hint}",
         "data": {
-          "device_name": "Device name",
-          "mqtt_topic": "Z2M MQTT topic",
-          "model": "Receiver model",
-          "show_heat_schedule_mode": "Show schedule mode for heating",
-          "show_water_schedule_mode": "Show schedule mode for hot water"
+          "z2m_entity": "Select a discovered device",
+          "mqtt_topic": "Or enter topic manually"
         },
         "data_description": {
-          "device_name": "A friendly name for this receiver, e.g. Hive Receiver",
-          "mqtt_topic": "The full Zigbee2MQTT topic for this device, e.g. zigbee2mqtt/Hive Receiver",
-          "model": "SLR1 = single channel, SLR2 = dual channel (heating + hot water), OTR1 = standalone"
+          "z2m_entity": "Devices already registered with Zigbee2MQTT and visible in Home Assistant.",
+          "mqtt_topic": "Full Z2M topic if not in the list, e.g. zigbee2mqtt/Hive Receiver"
         }
       },
       "setup_groups": {
         "title": "Room Group Manager",
         "description": "This creates the room group manager. Add TRVs first, then create groups from the room group manager Configure menu."
+      },
+      "add_trv_confirm": {
+        "title": "Add TRV \u2014 Step 2 of 2",
+        "description": "Topic: {topic}\n\nConfirm or edit the device name.",
+        "data": {
+          "device_name": "Device name"
+        },
+        "data_description": {
+          "device_name": "A friendly name shown in Home Assistant, e.g. Living Room TRV"
+        }
+      },
+      "add_receiver_confirm": {
+        "title": "Add Receiver \u2014 Step 2 of 2",
+        "description": "Topic: {topic}\n\nConfirm the device name and select the model.",
+        "data": {
+          "device_name": "Device name",
+          "model": "Receiver model",
+          "show_heat_schedule_mode": "Show schedule mode for heating",
+          "show_water_schedule_mode": "Show schedule mode for hot water"
+        },
+        "data_description": {
+          "model": "SLR1 = single channel heating, SLR2 = dual channel (heating + hot water), OTR1 = standalone"
+        }
       }
     },
     "abort": {
