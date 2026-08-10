@@ -1,123 +1,111 @@
-"""Group Offset number platform for Hive TRV Local."""
+"""Number platform — room group boost temperature and duration."""
 from __future__ import annotations
 
-import logging
-from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, META_KEY_GROUP_OFFSET
-
-if TYPE_CHECKING:
-    from .climate import ClimateGroupHelper
-
-_LOGGER = logging.getLogger(__name__)
+from .const import DATA_STORE, DOMAIN, EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED
+from .room import HiveRoomCoordinator
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the group offset number for each climate group."""
-    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
-    group = entry_data.get("group")
+    store = hass.data[DOMAIN][entry.entry_id][DATA_STORE]
+    _entities: dict[str, list] = {}
 
-    if not group:
-        _LOGGER.warning("[%s] Climate group entity not found for config entry, skipping number setup", config_entry.title)
-        return
-    if not group.advanced_mode:
-        return
+    @callback
+    def _on_room_added(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        room_id = event.data.get("room_id")
+        rc      = event.data.get("coordinator")
+        if rc and room_id not in _entities:
+            es = [
+                HiveRoomBoostTempNumber(rc, store),
+                HiveRoomBoostDurationNumber(rc, store),
+            ]
+            _entities[room_id] = es
+            async_add_entities(es)
 
-    async_add_entities([OffsetNumber(group)])
+    @callback
+    def _on_room_removed(event: Any) -> None:
+        for e in _entities.pop(event.data.get("room_id"), []):
+            hass.async_create_task(e.async_remove())
+
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_ADDED,   _on_room_added))
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_REMOVED, _on_room_removed))
 
 
-class OffsetNumber(RestoreNumber, NumberEntity):
-    """Global temperature offset for a climate group."""
+class HiveRoomBoostTempNumber(CoordinatorEntity[HiveRoomCoordinator], NumberEntity):
+    """Default boost temperature for a room group."""
 
-    _attr_has_entity_name = True
-    _attr_mode = NumberMode.SLIDER
-    _attr_native_min_value = -5.0
-    _attr_native_max_value = 5.0
-    _attr_native_step = 0.5
+    _attr_icon                       = "mdi:thermometer-high"
+    _attr_native_min_value           = 5.0
+    _attr_native_max_value           = 32.0
+    _attr_native_step                = 0.5
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_should_poll = False
+    _attr_mode                       = NumberMode.BOX
+    _attr_has_entity_name            = True
 
-    def __init__(self, group: ClimateGroupHelper) -> None:
-        """Initialize the offset number."""
-        self._group = group
-        self._attr_icon = "mdi:thermometer-plus"
-        self._attr_translation_key = "group_offset"
-        self._attr_unique_id = f"{group.unique_id}_group_offset"
+    def __init__(self, coordinator: HiveRoomCoordinator, store: Any) -> None:
+        super().__init__(coordinator)
+        self._store          = store
+        self._attr_unique_id = f"room_{coordinator.room_id}_boost_temperature"
+        self._attr_name      = f"{coordinator.room_name} Boost Temperature"
 
     @property
-    def device_info(self) -> dict[str, Any]:  # type: ignore[override]
-        """Attach this entity to the same device as the climate group."""
-        return self._group.device_info
-
-    async def async_added_to_hass(self) -> None:
-        """Restore state and register ID in group."""
-        await super().async_added_to_hass()
-        
-        # Register this entity ID in the group so status.py doesn't have to guess
-        self._group.offset_entity_id = self.entity_id
-        _LOGGER.debug("[%s] Registered offset entity: '%s'", self._group.entity_id, self.entity_id)
-
-        self._group.offset_set_callback = self._set_offset
-        if (last := await self.async_get_last_number_data()) is not None:
-            if last.native_value is not None:
-                self._group.run_state = replace(self._group.run_state, group_offset=float(last.native_value))
-                _LOGGER.debug("[%s] Restored group offset: %s", self._group.entity_id, last.native_value)
-
-    async def _set_offset(self, value: float) -> None:
-        """Set group offset and update both entities for UI consistency."""
-        _LOGGER.debug("[%s] External offset update: %s", self._group.entity_id, value)
-        self._group.run_state = replace(self._group.run_state, group_offset=value)
-        self.async_write_ha_state()
+    def device_info(self) -> dict:
+        return {"identifiers": {(DOMAIN, f"room_{self.coordinator.room_id}")}}
 
     @property
     def native_value(self) -> float:
-        """Return the current offset value."""
-        return self._group.run_state.group_offset
+        return self._store.get_room_boost_temperature(self.coordinator.room_id)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Persist the new offset and push it to members where applicable.
+        await self._store.async_set_room_boost_defaults(
+            self.coordinator.room_id,
+            value,
+            self._store.get_room_boost_duration(self.coordinator.room_id),
+        )
 
-        If the schedule currently owns the group_offset via a meta-key slot, a manual
-        change transfers ownership back to the user: the config_override marker is
-        cleared so the next slot transition will NOT reset the offset to 0.0.
-        """
-        _LOGGER.debug("[%s] Setting group offset to: %s", self._group.entity_id, value)
-        new_run_state = replace(self._group.run_state, group_offset=value)
 
-        # Ownership transfer: if a schedule meta-key slot currently controls the offset,
-        # release that claim so the slot-end cleanup does not silently reset the user's value.
-        if META_KEY_GROUP_OFFSET in new_run_state.config_overrides:
-            _LOGGER.debug(
-                "[%s] Offset ownership transferred from schedule to user (manual change)",
-                self._group.entity_id,
-            )
-            new_run_state = new_run_state.clear_config_overrides({META_KEY_GROUP_OFFSET})
+class HiveRoomBoostDurationNumber(CoordinatorEntity[HiveRoomCoordinator], NumberEntity):
+    """Default boost duration for a room group."""
 
-        self._group.run_state = new_run_state
-        self._group.async_defer_or_update_ha_state()
+    _attr_icon                       = "mdi:timer-outline"
+    _attr_native_min_value           = 1
+    _attr_native_max_value           = 240
+    _attr_native_step                = 1
+    _attr_native_unit_of_measurement = "min"
+    _attr_mode                       = NumberMode.BOX
+    _attr_has_entity_name            = True
 
-        sources = self._group.run_state.blocking_sources
-        if "presence" in sources:
-            # Only presence AWAY_OFFSET uses group_offset — window/switch enforcement ignores it.
-            await self._group.presence_override_manager.enforce_override()
-        elif not sources and not self._group.run_state.active_override:
-            await self._group.sync_mode_call_handler.call_debounced()
-        else:
-            _LOGGER.debug(
-                "[%s] No calls made. Sources: '%s', Active override: '%s'",
-                self._group.entity_id,
-                ", ".join(sources) if sources else "None",
-                self._group.run_state.active_override
-            )
-        self.async_write_ha_state()
+    def __init__(self, coordinator: HiveRoomCoordinator, store: Any) -> None:
+        super().__init__(coordinator)
+        self._store          = store
+        self._attr_unique_id = f"room_{coordinator.room_id}_boost_duration"
+        self._attr_name      = f"{coordinator.room_name} Boost Duration"
+
+    @property
+    def device_info(self) -> dict:
+        return {"identifiers": {(DOMAIN, f"room_{self.coordinator.room_id}")}}
+
+    @property
+    def native_value(self) -> int:
+        return self._store.get_room_boost_duration(self.coordinator.room_id)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self._store.async_set_room_boost_defaults(
+            self.coordinator.room_id,
+            self._store.get_room_boost_temperature(self.coordinator.room_id),
+            int(value),
+        )
