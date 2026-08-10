@@ -1,109 +1,114 @@
 # Hive TRV Local — Architecture & Decision Guide
 
-This document covers how v2 and v3 work, when to use each, and how the card
-system fits together.
-
 ---
 
-## Project overview
+## Version overview
 
-| | v1 `Hive-TRV-Local` | v2 `Hive-TRV-Local-v2` | v3 `Hive-TRV-Local-v3` |
+| | v1 | v2 | v4 (current) |
 |---|---|---|---|
+| **Repo** | `Hive-TRV-Local` | `Hive-TRV-Local-v2` | `Hive-TRV-Local-v3` |
 | **Domain** | `hive_local_trv` | `hive_trv_local` | `hive_trv_local` |
-| **Status** | Stable — bug fixes | Stable — feature complete | Pre-release — testing |
-| **Group engine** | Custom (basic) | Custom (basic) | climate_group_helper (advanced) |
-| **Sync modes** | ✗ | ✗ | Mirror / Lock / Master-Lock |
-| **Calibration** | Offset slider | ✗ | Hive offset + Danfoss scaled (×100) |
-| **Window control** | ✗ | ✗ | Binary sensor + delays |
-| **Member offsets** | ✗ | ✗ | ±20 °C per TRV |
-| **Member isolation** | ✗ | ✗ | Sensor / HVAC mode / manual-off triggers |
-| **Schedule engine** | Custom slots | Custom slots | HA Schedule helpers |
+| **Status** | Archived | Superseded | Active |
+| **Device entries** | No — uses Z2M entities | No — uses Z2M entities | Yes — per TRV and receiver |
+| **Entity suppression** | No | No | Yes — TRV hidden when grouped |
+| **Receiver support** | No | No | Yes — SLR1/SLR2/OTR1 |
+| **Group engine** | Custom | Custom | Custom (v2 engine) |
 | **Boiler demand** | ✓ | ✓ | ✓ |
-| **TRV card** | ✓ (auto) | ✓ (auto) | ✓ (auto) |
-| **Group card** | ✓ (auto) | ✓ (auto) | ✓ (auto) |
-| **Individual TRV entities** | Creates per-TRV entities | None — Z2M only | None — Z2M only |
+| **Schedules** | Custom slots | Custom slots | Custom slots |
+| **Boost** | Group only | Group only | Per device + per group |
+| **Cards** | ✓ auto | ✓ auto | ✓ auto |
 
 ---
 
-## Which version should I use?
+## v4 architecture
 
 ```
-Do you need advanced group management?
-(sync modes, window control, member offsets, isolation)
-│
-├─ YES → Use v3
-│         └─ Note: v3 is pre-release. Install v2 first, migrate when stable.
-│
-└─ NO → Do you want room groups + boiler demand only?
-         │
-         ├─ YES → Use v2
-         │         └─ Simplest. No MQTT code. Z2M entities directly.
-         │
-         └─ Are you already on v1 and it's working?
-                   │
-                   └─ YES → Stay on v1 until v2 is ready for your install.
-                            v1 and v2 use different HA domains so can coexist.
+You pair TRVs to Zigbee2MQTT as normal
+        │
+        ▼
+Zigbee2MQTT publishes state to MQTT broker
+        │
+        ▼
+Hive TRV Local — TRV entry (one per device)
+  └── HiveDeviceCoordinator
+        subscribes to: zigbee2mqtt/Living Room TRV
+        parses: temperature, hvac_mode, battery, pi_heating_demand
+        creates: climate.*, sensor.*, number.*
+        │
+        ▼ (when TRV added to a group)
+        individual climate.* hidden in entity registry
+        │
+        ▼
+Hive TRV Local — Groups entry (single instance)
+  └── HiveRoomCoordinator (one per group)
+        reads:    member current_temperature from hass.states
+        commands: climate.set_temperature, climate.set_hvac_mode via HA services
+        creates:  climate.* (group), button.* (boost), number.* (boost defaults)
+        │
+        ▼
+  └── BoilerDemandManager
+        watches:  hvac_action on all group member climate entities
+        drives:   receiver climate / switch / input_boolean
 ```
 
----
-
-## How v2 works
-
-### Architecture
-
-```
-Zigbee2MQTT
-    │ MQTT
-    ▼
-HA MQTT Integration
-    │ Creates climate.*, sensor.*, select.* entities per TRV
-    ▼
-Hive TRV Local v2  (hive_trv_local)
-    │
-    ├── HiveRoomCoordinator ──── reads HA states from Z2M entities
-    │       │                    sends commands via climate.set_temperature,
-    │       │                    climate.set_hvac_mode service calls
-    │       │
-    │       ├── ScheduleManager  — weekly slot engine
-    │       └── stores boost defaults in HiveTRVStorage
-    │
-    ├── BoilerDemandManager ──── watches hvac_action on all group members
-    │                            calls switch.turn_on / switch.turn_off
-    │
-    └── Hive TRV Card JS ──────── auto-registered via async_setup
-            hive-trv-card         → individual Z2M TRV entities
-            hive-trv-group-card   → room group entities
-```
-
-### Data flow — setting a room temperature
+### Data flow — temperature command
 
 ```
 User adjusts target on group card
         │
         ▼
-climate.set_temperature  (HA service call)
-    entity_id: [climate.trv_1, climate.trv_2, ...]   ← all group members
+HiveRoomCoordinator.async_set_temperature()
         │
         ▼
-HA MQTT Integration publishes to Z2M
+climate.set_temperature service call
+  entity_id: [climate.living_room_trv_1, climate.living_room_trv_2]
         │
         ▼
-Zigbee2MQTT sends to each physical TRV
+HA MQTT integration publishes to Z2M
+        │
+        ▼
+Zigbee2MQTT sends to physical TRV over Zigbee
 ```
 
 ### Data flow — boiler demand
 
 ```
-Z2M TRV state changes  (hvac_action: heating / idle)
+TRV state update: hvac_action = "heating"
         │
         ▼
 BoilerDemandManager.async_evaluate()
-        │
-        ├─ any member heating → switch.turn_on  (boiler entity)
-        └─ no members heating → switch.turn_off (boiler entity)
+  any member heating? → turn_on boiler entity
+  no members heating? → turn_off boiler entity
 ```
 
-### Storage schema
+### Entity suppression
+
+```
+User creates group with [climate.living_room_trv_1]
+        │
+        ▼
+config_flow._suppress_member_entities(hide=True)
+  entity_registry.async_update_entity(
+      "climate.living_room_trv_1",
+      hidden_by=RegistryEntryHider.INTEGRATION
+  )
+  → entity disappears from UI, still works for service calls
+        │
+        ▼
+User removes TRV from group
+        │
+        ▼
+config_flow._suppress_member_entities(hide=False)
+  entity_registry.async_update_entity(
+      "climate.living_room_trv_1",
+      hidden_by=None
+  )
+  → entity immediately reappears, no restart
+```
+
+---
+
+## Storage schema (v4)
 
 ```json
 {
@@ -114,7 +119,7 @@ BoilerDemandManager.async_evaluate()
       "members": ["climate.living_room_trv_1", "climate.living_room_trv_2"],
       "temp_sensors": [],
       "schedule": [
-        {"days": [0,1,2,3,4], "time": "07:00", "temperature": 21.0},
+        {"days": [0,1,2,3,4], "time": "06:30", "temperature": 21.0},
         {"days": [0,1,2,3,4], "time": "09:00", "temperature": 18.0}
       ],
       "boost_temperature": 22.0,
@@ -124,184 +129,100 @@ BoilerDemandManager.async_evaluate()
 }
 ```
 
-Stored at: `/config/.storage/hive_trv_local.<entry_id>`
+Stored at: `/config/.storage/hive_trv_local.<groups_entry_id>`
 
-### Group entity attributes
+---
+
+## Config entry types
+
+v4 uses three types of config entry under one domain:
+
+| `entry_type` | Multi-instance | Platforms | Created by |
+|---|---|---|---|
+| `trv` | Yes | climate, sensor, number | Add a TRV |
+| `receiver` | Yes | climate, sensor, button, number, select | Add a receiver |
+| `groups` | No (one only) | climate, button, number | Set up room group manager |
+
+All three share the domain `hive_trv_local`. The `entry_type` key in `entry.data`
+distinguishes them. Each has its own options flow.
+
+---
+
+## Group entity attributes
 
 The room group `climate.*` entity exposes:
 
 | Attribute | Type | Description |
 |---|---|---|
-| `members` | list | Member Z2M entity IDs |
+| `members` | list | Member entity IDs |
 | `member_count` | int | Number of members |
-| `member_temperatures` | dict | `{entity_id: temperature}` per member |
+| `member_temperatures` | dict | `{entity_id: temp}` per member |
 | `heat_required` | bool | True if any member is heating |
 | `mode` | str | `manual` / `schedule` / `boost` / `off` |
 | `schedule` | list | Current schedule slots |
 | `schedule_current_slot` | int | Index of active slot |
-| `boost_ends` | datetime | When boost expires |
-| `boost_remaining_minutes` | int | Minutes remaining on boost |
+| `boost_ends` | datetime | When boost expires (boost mode only) |
+| `boost_remaining_minutes` | int | Minutes remaining (boost mode only) |
 
 ---
 
-## How v3 works
-
-### Architecture
-
-```
-Zigbee2MQTT
-    │ MQTT
-    ▼
-HA MQTT Integration
-    │ Creates climate.*, sensor.*, select.* entities per TRV
-    ▼
-Hive TRV Local v3  (hive_trv_local)
-    │
-    ├── climate_group_helper engine ─── full group management
-    │       │
-    │       ├── SyncMode      — Mirror / Lock / Master-Lock
-    │       ├── Calibration   — OFFSET (Hive) / SCALED×100 (Danfoss)
-    │       ├── WindowControl — binary sensor + configurable delays
-    │       ├── MemberOffset  — per-TRV temperature offset ±20°C
-    │       ├── Isolation     — sensor / HVAC mode / member-off triggers
-    │       ├── Schedule      — HA Schedule helper integration
-    │       └── Override      — timed boost with auto-restore
-    │
-    ├── BoilerDemandManager ─── same as v2
-    │
-    └── Hive TRV Card JS ─────── same two cards as v2
-```
-
-### Key differences from v2
-
-**Groups are created as Helpers** (Settings → Helpers → Create Helper → Hive TRV Group),
-not via Configure. This means each group is a separate config entry with its own
-options flow, rather than all groups being managed under one integration entry.
-
-**HA Schedule helpers** — instead of custom slot lists, v3 uses native HA schedule
-entities. Create a schedule in Settings → Helpers → Schedule, add time slots with
-`data: { hvac_mode: heat, temperature: 21.0 }`, then assign it to the group.
-
-**Sync modes** — when a member TRV is changed directly (physical buttons, Z2M,
-another automation), the group can:
-- **Mirror** — push the change to all other members
-- **Lock** — revert the member back to the group target
-- **Master-Lock** — only changes on the designated master TRV are accepted
-
-**Calibration** — v3 can write an external sensor value back to the TRV:
-- Hive TRVs: uses `regulation_setpoint_offset` (OFFSET mode, delta in °C)
-- Danfoss Ally: uses `external_measured_room_sensor` (SCALED mode, value × 100)
-
----
-
-## Card decision guide
+## Cards
 
 ### Which card for which entity?
 
 ```
-What type of climate entity do I have?
-│
-├─ climate.* from MQTT integration (Z2M entity)
-│   Individual TRV → use  custom:hive-trv-card
-│
-└─ climate.* from hive_trv_local integration (group entity)
-    Room group → use  custom:hive-trv-group-card
+climate.* from hive_trv_local (entry_type=trv)
+    → custom:hive-trv-card
+
+climate.* from hive_trv_local (room group)
+    → custom:hive-trv-group-card
 ```
 
-### How to tell them apart
+Both cards are auto-registered. On HA 2026.6+, both implement `getEntitySuggestion`
+and appear in the entity-based card picker.
 
-In **Settings → Entities**, find your climate entity and check the Integration column:
-- **MQTT** = Z2M individual TRV → `hive-trv-card`
-- **Hive TRV Local** = room group → `hive-trv-group-card`
+### Distinguishing TRV from group entities
 
-Or check the entity's attributes in Developer Tools → States:
-- Has `members` attribute → it's a room group → `hive-trv-group-card`
-- Has `battery` or `pi_heating_demand` attribute → individual TRV → `hive-trv-card`
-
-### Card features
-
-| Feature | `hive-trv-card` | `hive-trv-group-card` |
-|---|---|---|
-| Current temperature | ✓ | ✓ (average) |
-| Target temperature +/− | ✓ | ✓ (all members) |
-| Manual / Schedule / Boost / Off | ✓ | ✓ |
-| Boost panel (temp + duration sliders) | ✓ | ✓ |
-| Boost countdown | ✓ | ✓ |
-| Schedule slot view + skip | ✓ | ✓ |
-| Battery bar | ✓ | — |
-| Heating demand bar | ✓ | ✓ |
-| Signal strength | ✓ | — |
-| Valve orientation | ✓ | — |
-| Window open toggle | ✓ | — |
-| Frost protect | ✓ | ✓ |
-| Member temperature list | — | ✓ |
-| Per-member heating indicator | — | ✓ |
-
-### Card YAML
-
-**Individual TRV:**
-```yaml
-type: custom:hive-trv-card
-entity: climate.living_room_trv
-battery_entity: sensor.living_room_trv_battery          # optional
-demand_entity: sensor.living_room_trv_pi_heating_demand # optional
-orientation_entity: select.living_room_trv_mounting_orientation  # optional (v1 only)
-name: Living Room                                       # optional override
-```
-
-**Room group:**
-```yaml
-type: custom:hive-trv-group-card
-entity: climate.living_room
-name: Living Room                                       # optional override
-```
+In Developer Tools → States, check attributes:
+- Has `pi_heating_demand` or `battery` → individual TRV → `hive-trv-card`
+- Has `members` array → room group → `hive-trv-group-card`
 
 ---
 
-## Event bus (v2)
+## Event bus
 
-v2 uses an internal HA event bus for room lifecycle management:
+Room lifecycle events (fired on the HA event bus):
 
 | Event | Payload | Purpose |
 |---|---|---|
-| `hive_trv_local_room_added` | `entry_id, room_id, coordinator` | New group created — platforms register entities |
-| `hive_trv_local_room_removed` | `entry_id, room_id, freed_members` | Group deleted — platforms remove entities |
-| `hive_trv_local_room_updated` | `entry_id, room_id, new_members, added_members, removed_members` | Membership changed |
+| `hive_trv_local_room_added` | `entry_id, room_id, coordinator` | Platforms register entities |
+| `hive_trv_local_room_removed` | `entry_id, room_id, freed_members` | Platforms remove entities |
+| `hive_trv_local_room_updated` | `entry_id, room_id, new_members` | Coordinator updates membership |
 
 ---
 
 ## Services
 
-Both v2 and v3 register these services (domain `hive_trv_local`):
-
-| Service | Applies to | Description |
-|---|---|---|
-| `boost` | group entity | Start timed boost |
-| `end_boost` | group entity | Cancel active boost |
-| `set_schedule` | group entity | Set custom weekly schedule |
-| `clear_schedule` | group entity | Remove schedule |
-| `advance_schedule` | group entity | Skip to next slot immediately |
-
-v3 adds (from climate_group_helper):
+### Group services (domain: `hive_trv_local`)
 
 | Service | Description |
 |---|---|
-| `hive_trv_local.set_schedule_entity` | Switch to a different HA schedule helper |
-| `hive_trv_local.boost` | Also supports `temperature_offset` (relative boost) |
+| `group_boost` | Start timed boost on a room group |
+| `group_end_boost` | Cancel active boost |
+| `group_set_schedule` | Set custom weekly schedule |
+| `group_clear_schedule` | Remove schedule (returns to manual) |
+| `group_advance_schedule` | Skip to next slot immediately |
 
 ---
 
 ## Versioning scheme
 
 ```
-MAJOR.FEATURE.FIX
+MAJOR.MINOR.PATCH
 
-v2.0.3  = v2 major release, 0 feature sets, 3rd fix
-v3.1.0  = v3 major release, 1st feature addition, no fixes
-
-Major:   Breaking change (domain rename, storage schema change)
-Feature: New entity types, new config options, new services
-Fix:     Bug fix, import error, crash fix
+Major:  Breaking change (new entry type structure, storage schema)
+Minor:  New feature (new entity, new service, new card feature)
+Patch:  Bug fix
 ```
 
 ---
@@ -309,16 +230,11 @@ Fix:     Bug fix, import error, crash fix
 ## Upgrade path
 
 ```
-v1  ──── working, keep if no issues
- │
- └──►  v2  ──── install alongside v1 (different domain)
-               set up groups in v2, keep v1 TRV entities for individual control
-               │
-               └──►  v3  ──── uninstall v2, install v3 (same domain, different repo)
-                              groups migrate to Helpers flow
-                              schedule helpers replace custom slots
+v1 (hive_local_trv)
+  └─► v2 (hive_trv_local) — different domain, can coexist with v1
+        └─► v4 (hive_trv_local) — same domain as v2, delete v2 entries first
+                                   add TRVs individually, then create groups
 ```
 
-v1 (`hive_local_trv`) and v2/v3 (`hive_trv_local`) use **different HA domains**,
-so v1 + v2 can coexist on the same HA instance. v2 and v3 share the same domain
-and **cannot both be installed at once**.
+v1 and v2/v4 use **different HA domains** — they can coexist.  
+v2 and v4 share the same domain — **delete all v2 entries before installing v4**.
