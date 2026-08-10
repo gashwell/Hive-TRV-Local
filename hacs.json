@@ -1,5 +1,7 @@
 {
   "name": "Hive TRV Local",
+  "content_in_root": false,
+  "filename": "manifest.json",
   "homeassistant": "2024.1.0",
-  "filename": "manifest.json"
+  "hide_default_branch": true
 }
