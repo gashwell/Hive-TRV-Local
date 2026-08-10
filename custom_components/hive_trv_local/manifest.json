@@ -1,12 +1,16 @@
 {
   "domain": "hive_trv_local",
   "name": "Hive TRV Local",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "documentation": "https://github.com/gashwell/Hive-TRV-Local-v3",
   "issue_tracker": "https://github.com/gashwell/Hive-TRV-Local-v3/issues",
   "dependencies": [],
-  "after_dependencies": ["mqtt"],
-  "codeowners": ["@gashwell"],
+  "after_dependencies": [
+    "mqtt"
+  ],
+  "codeowners": [
+    "@gashwell"
+  ],
   "requirements": [],
   "iot_class": "local_push",
   "config_flow": true,
