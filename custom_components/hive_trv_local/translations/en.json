@@ -3,582 +3,112 @@
     "step": {
       "user": {
         "title": "Hive TRV Local",
-        "description": "Create a virtual controller that synchronizes multiple heating/cooling units. This group acts as a single smart entity in your dashboard and automations, consolidating states and commands.",
+        "description": "{info}",
         "data": {
-          "name": "Group Name",
-          "entities": "Climate Devices"
+          "z2m_base_topic": "Zigbee2MQTT base topic"
         },
         "data_description": {
-          "name": "A friendly name for your group (e.g. 'Living Room' or 'Whole House').",
-          "entities": "Select the climate devices (thermostats, ACs) to include in this group."
+          "z2m_base_topic": "The MQTT topic prefix used by Zigbee2MQTT (default: zigbee2mqtt)."
         }
       }
     },
-    "error": {
-      "no_entities": "You must select at least one climate device.",
-      "invalid_entity": "One or more selected devices are not valid climate entities.",
-      "duplicate_name": "A climate group with this name already exists.",
-      "unavailable_entities": "Some selected devices are unavailable. The group will be created but may not work fully until they respond."
-    },
     "abort": {
-      "already_configured": "This group is already configured.",
-      "single_instance_allowed": "Only one instance is allowed.",
-      "no_changes": "No changes were made."
+      "already_configured": "Hive TRV Local is already configured."
     }
   },
   "options": {
-    "flow_title": "Configure Group",
     "step": {
       "init": {
-        "title": "Configure Hive TRV Group",
-        "sections": {
-          "members_section": {
-            "name": "Members & Modes",
-            "description": "Add climate devices and choose how capabilities are merged. Advanced Features add support for a Master Entity.",
-            "data": {
-              "entities": "Climate Devices",
-              "master_entity": "Master Entity",
-              "hvac_mode_strategy": "HVAC Mode Strategy",
-              "feature_strategy": "Feature Strategy",
-              "union_out_of_bounds_action": "Out-of-Bounds Action",
-              "union_unsupported_hvac_action": "Unsupported HVAC Mode Action"
-            },
-            "data_description": {
-              "entities": "Add or remove devices. Removing devices stops them from being controlled by the group.",
-              "master_entity": "Designate one member as the Master Entity (Leader). It is used for Master/Lock synchronization and centralized target values.",
-              "hvac_mode_strategy": "Strategy for calculating the group's state from its members (e.g. if one is 'heat' and another is 'off').",
-              "feature_strategy": "Determines which features (e.g. preset modes, fan modes) are available on the group when members have different capabilities.",
-              "union_out_of_bounds_action": "What to do with members that cannot reach the target temperature. Only applies when Feature Strategy is set to Union.",
-              "union_unsupported_hvac_action": "What to do with members that technically do not support the group's target HVAC mode (e.g. AC when heating). Only applies when Feature Strategy is set to Union."
-            }
-          },
-          "temperature_section": {
-            "name": "Temperature Settings",
-            "description": "Configure temperature aggregation and precision. Advanced Features add support for external sensors, calibration, and frost protection.",
-            "data": {
-              "temp_target_avg": "Target Temperature",
-              "temp_use_master": "Use Master Target Temperature",
-              "temp_target_round": "Target Temperature Precision",
-              "temp_current_avg": "Current Temperature",
-              "min_temp_off": "Minimum Temperature when Off",
-              "temp_sensors": "External Temperature Sensors",
-              "temp_update_targets": "Write External Temp to Entities",
-              "temp_calibration_mode": "Calibration Mode",
-              "calibration_heartbeat": "Calibration Heartbeat (min)",
-              "calibration_ignore_off": "Ignore Off Members",
-              "ignore_off_members_temperature": "Exclude Off Members from Temperature"
-            },
-            "data_description": {
-              "temp_target_avg": "How the group calculates the target setpoint to send to its members.",
-              "temp_use_master": "Use the master entity's setpoint instead of calculating an average. Falls back to averaging if unavailable.",
-              "temp_target_round": "Only applies to values sent to devices, not to current/displayed values.",
-              "temp_current_avg": "How the group summarizes sensor readings from its members.",
-              "min_temp_off": "Sends the device's minimum temperature (e.g. 5°C) when turning the group off. This ensures valves are fully closed for frost protection.",
-              "temp_sensors": "Use external sensors instead of member readings. These become the sole source of truth for the group's temperature.",
-              "temp_update_targets": "Write the external sensor value to number entities (e.g. TRV calibration offsets). Useful for keeping thermostats aware of actual room temperature.",
-              "temp_calibration_mode": "Absolute: Send value directly. Offset: Send delta (External - TRV Internal). Scaled: Send as Integer x100 (e.g. 21.5 -> 2150).",
-              "calibration_heartbeat": "Periodically force-sync calibration to entities even if temperature hasn't changed. Set to 0 to disable.",
-              "calibration_ignore_off": "Do not send calibration updates to members that are currently off.",
-              "ignore_off_members_temperature": "Exclude members that are currently off from current and target temperature calculations."
-            }
-          },
-          "humidity_section": {
-            "name": "Humidity Settings",
-            "description": "Configure humidity aggregation and precision. Advanced Features add support for external sensors.",
-            "data": {
-              "humidity_target_avg": "Target Humidity",
-              "humidity_use_master": "Use Master Target Humidity",
-              "humidity_target_round": "Target Humidity Precision",
-              "humidity_current_avg": "Current Humidity",
-              "humidity_sensors": "External Humidity Sensors",
-              "humidity_update_targets": "Write External Humidity to Entities"
-            },
-            "data_description": {
-              "humidity_target_avg": "How the group calculates the target setpoint to send to its members.",
-              "humidity_use_master": "Use the master entity's setpoint instead of calculating an average. Falls back to averaging if unavailable.",
-              "humidity_target_round": "Only applies to values sent to devices, not to current/displayed values.",
-              "humidity_current_avg": "How the group summarizes sensor readings from its members.",
-              "humidity_sensors": "Use external sensors instead of member readings. These become the sole source of truth for the group's humidity.",
-              "humidity_update_targets": "Write the external sensor value to number entities. Useful for dehumidifier calibration."
-            }
-          },
-          "sync_section": {
-            "name": "Sync Mode",
-            "description": "Defines what happens when a member device is changed directly (e.g. via its own app or physical buttons) — not when you control the group itself. Choose which attributes are enforced.",
-            "data": {
-              "sync_mode": "Sync Mode",
-              "sync_attributes": "Sync Attributes",
-              "ignore_off_members_sync": "Respect Member Off State (Sync)"
-            },
-            "data_description": {
-              "sync_mode": "What to do when a member is changed outside the group. Disabled: ignore it. Mirror: mirror changes. Lock: revert changes. Mirror/Lock: mirror selected attributes, revert unselected. Master/Lock: mirror master, revert others.",
-              "sync_attributes": "Defines which attributes the Sync Mode acts on. The handling of selected and unselected attributes (Mirror, Revert, or Ignore) depends on the chosen mode.",
-              "ignore_off_members_sync": "Members that are manually turned Off are left alone. Their state is neither mirrored nor reverted. Note: direct group commands always reach all members regardless of this setting."
-            }
-          },
-          "window_section": {
-            "name": "Window Control",
-            "description": "Turn off or set individual temperature when windows open. Restore when closed.",
-            "data": {
-              "window_mode": "Window Control Mode",
-              "window_adopt_manual_changes": "Adopt Manual Changes",
-              "window_action": "Window Open Action",
-              "window_temperature": "Window Open Temperature",
-              "room_sensor": "Room Window Sensor",
-              "zone_sensor": "Zone Window Sensor",
-              "room_open_delay": "Room Open Delay (seconds)",
-              "zone_open_delay": "Zone Open Delay (seconds)",
-              "close_delay": "Close Delay (seconds)"
-            },
-            "data_description": {
-              "window_mode": "Enable or disable climate group based on window/door sensors. When enabled, HVAC mode sets to 'off' when windows open and restores to the previous state when closed.",
-              "window_adopt_manual_changes": "Allow target state changes while windows are open.",
-              "window_action": "What to do when window opens: Turn Off completely or set a specific Temperature (e.g. frost protection).",
-              "window_temperature": "Target temperature to set when 'Temperature' action is selected.",
-              "room_sensor": "(Optional) Binary sensor for the room's own window/door.",
-              "zone_sensor": "(Optional) Binary sensor for windows/doors in the zone/floor. Zone sensor should include room sensor.",
-              "room_open_delay": "Time to wait after room window opens before turning off heating.",
-              "zone_open_delay": "Time to wait after zone window opens before turning off heating.",
-              "close_delay": "Time to wait after all windows close before restoring heating."
-            }
-          },
-          "presence_section": {
-            "name": "Presence Control",
-            "description": "Manage climate settings based on room presence. After absence is detected for the configured duration, the away action is triggered. Previous settings are restored upon return.",
-            "data": {
-              "presence_mode": "Presence Control Mode",
-              "presence_sensor": "Presence Trigger",
-              "presence_zone": "Presence Zone",
-              "presence_action": "Away Action",
-              "presence_away_offset": "Away Temperature Offset (°C)",
-              "presence_away_temperature": "Away Temperature (°C)",
-              "presence_away_preset": "Away Preset",
-              "presence_away_delay": "Away Delay (seconds)",
-              "presence_return_delay": "Return Delay (seconds)"
-            },
-            "data_description": {
-              "presence_mode": "Enable or disable automatic away-fallback when absence is detected.",
-              "presence_sensor": "The entity reporting room presence. You can select multiple sensors (e.g. motion sensor and phone). Any 'on' or 'home' state is treated as present.",
-              "presence_zone": "(Optional) Select zones where presence is counted. If defined, a person is only 'present' when in one of these zones. If empty, the person is 'present' when in any zone (except 'not_home').",
-              "presence_action": "The fallback action to perform when absence is detected.",
-              "presence_away_offset": "Offset from current target when away (e.g. -2° or +2°). Schedule changes during absence are applied automatically.",
-              "presence_away_temperature": "Fixed temperature to set when away.",
-              "presence_away_preset": "Preset mode to activate when away.",
-              "presence_away_delay": "Wait time after sensor reports absence before activating away mode.",
-              "presence_return_delay": "Wait time after sensor reports presence before restoring."
-            }
-          },
-          "schedule_section": {
-            "name": "Schedule Automation",
-            "description": "Link a schedule or calendar entity to automate climate settings. Slot data can include climate attributes (temperature, hvac_mode) and meta-keys (turn_off, sync_mode, sync_attributes) to adjust group behavior per slot.",
-            "data": {
-              "schedule_entity": "Schedule / Calendar Entity",
-              "schedule_bypass_entity": "Bypass Entity",
-              "resync_interval": "Resync Interval (minutes)",
-              "override_duration": "Override Duration (minutes)",
-              "persist_changes": "Sticky Override",
-              "persist_active_schedule": "Retain Schedule Override",
-              "ignore_off_members_schedule": "Respect Member Off State (Schedule)"
-            },
-            "data_description": {
-              "schedule_entity": "Select a schedule.* or calendar.* entity. For schedule entities, slot data is read from the slot's attributes. For calendar entities, slot data is read from the event's description field as YAML. Supported keys: climate attributes and meta-keys.",
-              "schedule_bypass_entity": "Optional higher-priority layer (e.g. a vacation calendar). When active, its slot data overrides the main schedule. Slot data is read the same way: attributes for schedule.* entities, YAML description for calendar.* entities.",
-              "resync_interval": "Force-sync members to the target state every X minutes. Ensures devices stay on schedule even if adjusted manually or commands are missed. Set to 0 to disable.",
-              "override_duration": "The duration for manual overrides. After this time, the group automatically reverts to the current schedule. Set to 0 to skip the override period.",
-              "persist_changes": "Changes to the schedule itself will be ignored while a manual override is active. Re-applies the current schedule only after the override expires.",
-              "persist_active_schedule": "Retain the active schedule after a restart when changed via service. Otherwise, it resets to the default.",
-              "ignore_off_members_schedule": "The Schedule will NOT turn on members that are currently Off."
-            }
-          },
-          "temp_offsets_section": {
-            "name": "Member Offsets",
-            "description": "Apply individual temperature offsets so specific members run proportionately warmer or cooler than the group's target setpoint.",
-            "data": {
-              "member_offset_correction": "Correct member offset"
-            },
-            "data_description": {
-              "member_offset_correction": "When enabled, each member's offset is subtracted before averaging so the group displays the logical setpoint instead of the raw physical average."
-            }
-          },
-          "isolation_section": {
-            "name": "Member Isolation",
-            "description": "Temporarily isolate specific members (e.g. radiators behind curtains) when a trigger is active. Isolated members are turned off and excluded from group calculations.",
-            "data": {
-              "isolation_trigger": "Trigger Type",
-              "isolation_sensor": "Isolation Sensor",
-              "isolation_trigger_hvac_modes": "HVAC Mode Trigger",
-              "isolation_entities": "Entities to Isolate",
-              "isolation_activate_delay": "Activate Delay (seconds)",
-              "isolation_restore_delay": "Restore Delay (seconds)"
-            },
-            "data_description": {
-              "isolation_trigger": "Choose what activates the isolation: a binary sensor or a specific HVAC mode of the group.",
-              "isolation_sensor": "(Sensor trigger) Binary sensor that triggers isolation when ON.",
-              "isolation_trigger_hvac_modes": "(HVAC mode trigger) Isolation activates when the group's target mode is one of these.",
-              "isolation_entities": "Group members to isolate when the trigger is active.",
-              "isolation_activate_delay": "(Sensor / HVAC Mode trigger only) Time to wait after the trigger activates before isolating members.",
-              "isolation_restore_delay": "(Sensor / HVAC Mode trigger only) Time to wait after the trigger deactivates before restoring members to the group target state."
-            }
-          },
-          "member_template_section": {
-            "name": "Member Template",
-            "description": "Render single-setpoint members as virtual heat/cool range entities. The group helper translates range commands into appropriate physical heat/cool commands based on each member's current temperature.",
-            "data": {
-              "range_template_entities": "Single-Setpoint Members",
-              "range_template_deadband_action": "Deadband Action"
-            },
-            "data_description": {
-              "range_template_entities": "Select single-setpoint thermostats to render as virtual range-mode devices.",
-              "range_template_deadband_action": "Action to perform when the current temperature is inside the target range (deadband)."
-            }
-          },
-          "advanced_section": {
-            "name": "Advanced Settings",
-            "description": "Fine-tune command timings, retry behavior, and staggered calls. Toggle diagnostic attributes and configuration sensors.",
-            "data": {
-              "debounce_delay": "Debounce Delay (seconds)",
-              "retry_attempts": "Retry Attempts",
-              "retry_delay": "Retry Delay (seconds)",
-              "staggered_call_delay": "Staggered Call Delay (seconds)",
-              "grace_period": "Optimistic UI Grace Period (seconds)",
-              "expose_smart_sensors": "Expose Smart Sensors",
-              "expose_member_entities": "Expose Member List",
-              "expose_config": "Expose Configuration Sensor"
-            },
-            "data_description": {
-              "debounce_delay": "Time to wait before sending commands. Higher values prevent 'rapid-fire' commands when sliding controls, but feel slower.",
-              "retry_attempts": "How many times to resend a command if a device doesn't respond. Set to 0 to disable.",
-              "retry_delay": "Pause between retry attempts. Giving devices a moment to recover can improve reliability.",
-              "staggered_call_delay": "Time to wait between individual commands to group members. Staggering calls prevents network congestion in Zigbee/Matter environments. Set to 0 to disable.",
-              "grace_period": "How long the group shows the commanded value before switching to the member average. Prevents UI flicker when slow devices (Cloud bridges, Zigbee) echo their old state back. Set to 0 to disable.",
-              "expose_smart_sensors": "Creates extra sensor entities for the group's temperature and humidity (useful for graphs).",
-              "expose_member_entities": "Creates an attribute listing all member entity IDs.",
-              "expose_config": "Creates a diagnostic sensor (sensor.*_configuration) that exposes portable settings as a JSON attribute. Useful for copying settings between groups via automations."
-            }
-          }
-        },
+        "title": "Hive TRV Local",
+        "menu_options": {
+          "settings": "Settings",
+          "groups": "Manage room groups"
+        }
+      },
+      "settings": {
+        "title": "Settings",
         "data": {
-          "advanced_mode": "Advanced Features",
-          "expand_sections": "Expand all sections by default"
+          "z2m_base_topic": "Zigbee2MQTT base topic",
+          "boiler_entity": "Boiler / receiver entity",
+          "enable_diagnostics": "Enable diagnostic logging"
+        },
+        "data_description": {
+          "z2m_base_topic": "The MQTT topic prefix used by Zigbee2MQTT (default: zigbee2mqtt).",
+          "boiler_entity": "Turned on when any group member calls for heat, off when none do. Supports climate, switch, and input_boolean.",
+          "enable_diagnostics": "Writes HIVE_DIAG entries to the HA log at WARNING level."
         }
-      }
-    },
-    "error": {
-      "no_entities": "At least one climate device must remain in the group.",
-      "invalid_entity": "Invalid device selected.",
-      "configuration_error": "Could not update configuration.",
-      "calibration_requires_sensors": "Calibration targets require at least one external temperature sensor.",
-      "master_refresh_notice": "Master Entity added. New options available.",
-      "master_options_notice": "New Master entity option",
-      "isolation_all_selected": "At least one member must remain outside isolation.",
-      "sensor_loop_protection": "Cannot use a Hive TRV Local sensor as an external sensor — this would create a feedback loop."
-    },
-    "abort": {
-      "no_changes": "No changes detected."
-    }
-  },
-  "selector": {
-    "hvac_mode_strategy": {
-      "options": {
-        "normal": "Normal – The group adopts the most common member mode",
-        "off_priority": "Off Priority – If any member is Off, the whole group is Off",
-        "auto": "Auto – Smart switching between Normal and Off Priority"
-      }
-    },
-    "feature_strategy": {
-      "options": {
-        "intersection": "Intersection – Support features only if ALL members have them",
-        "union": "Union – Support all features present on ANY member"
-      }
-    },
-    "temp_target_avg": {
-      "options": {
-        "mean": "Mean (Average)",
-        "median": "Median (Middle Value)",
-        "min": "Minimum (Lowest)",
-        "max": "Maximum (Highest)"
-      }
-    },
-    "temp_target_round": {
-      "options": {
-        "none": "No Rounding (Exact)",
-        "half": "Half Degree (0.5°)",
-        "integer": "Whole Numbers (1°)"
-      }
-    },
-    "temp_current_avg": {
-      "options": {
-        "mean": "Mean (Average)",
-        "median": "Median (Ignore Outliers)",
-        "min": "Minimum (Lowest)",
-        "max": "Maximum (Highest)"
-      }
-    },
-    "temp_calibration_mode": {
-      "options": {
-        "absolute": "Absolute – Send value directly (Standard)",
-        "offset": "Offset – Send difference (External - TRV Internal)",
-        "scaled": "Scaled – Integer x100 (Danfoss Ally)"
-      }
-    },
-    "humidity_target_avg": {
-      "options": {
-        "mean": "Mean (Average)",
-        "median": "Median (Middle Value)",
-        "min": "Minimum (Lowest)",
-        "max": "Maximum (Highest)"
-      }
-    },
-    "humidity_target_round": {
-      "options": {
-        "none": "No Rounding (Exact)",
-        "half": "Half Percent (0.5%)",
-        "integer": "Whole Numbers (1%)"
-      }
-    },
-    "humidity_current_avg": {
-      "options": {
-        "mean": "Mean (Average)",
-        "median": "Median (Ignore Outliers)",
-        "min": "Minimum (Lowest)",
-        "max": "Maximum (Highest)"
-      }
-    },
-    "sync_mode": {
-      "options": {
-        "disabled": "Disabled – No automatic sync between members",
-        "mirror": "Mirror – Manual changes on one device update all members",
-        "lock": "Lock – Reverts manual changes to match the group state",
-        "mirror_lock": "Mirror/Lock – Selective attributes are mirrored, others are strictly locked",
-        "master_lock": "Master/Lock – Only the master entity can change the group target"
-      }
-    },
-    "sync_attributes": {
-      "options": {
-        "hvac_mode": "HVAC Mode",
-        "preset_mode": "Preset Mode",
-        "temperature": "Temperature (Target)",
-        "target_temp_high": "Target Temperature High (Range)",
-        "target_temp_low": "Target Temperature Low (Range)",
-        "fan_mode": "Fan Mode",
-        "swing_mode": "Vertical Swing",
-        "swing_horizontal_mode": "Horizontal Swing",
-        "humidity": "Humidity (Target)"
-      }
-    },
-    "window_mode": {
-      "options": {
-        "disabled": "Disabled – Window control is inactive",
-        "enabled": "Enabled – Window control is active"
-      }
-    },
-    "window_adopt_manual_changes": {
-      "options": {
-        "off": "Off – Block all changes",
-        "all": "All – Accept all manual changes",
-        "master_only": "Master Only – Accept only the master entity"
-      }
-    },
-    "window_action": {
-      "options": {
-        "off": "Turn Off",
-        "temperature": "Set Temperature"
-      }
-    },
-    "union_out_of_bounds_action": {
-      "options": {
-        "off": "Turn Off",
-        "clamp": "Clamp to Limit"
-      }
-    },
-    "union_unsupported_hvac_action": {
-      "options": {
-        "ignore": "Ignore",
-        "off": "Turn Off"
-      }
-    },
-    "isolation_trigger": {
-      "options": {
-        "disabled": "Disabled – Member isolation is disabled",
-        "sensor": "Binary Sensor – Isolate when sensor is ON",
-        "hvac_mode": "HVAC Mode – Isolate when group mode matches",
-        "member_off": "Member Off – Isolate when a member turns off manually"
-      }
-    },
-    "presence_mode": {
-      "options": {
-        "disabled": "Disabled – Presence control is inactive",
-        "enabled": "Enabled – Away-fallback"
-      }
-    },
-    "presence_action": {
-      "options": {
-        "off": "Turn Off",
-        "away_offset": "Away Offset",
-        "away_temperature": "Away Temperature",
-        "away_preset": "Away Preset"
-      }
-    },
-    "range_template_deadband_action": {
-      "options": {
-        "off": "Turn Off",
-        "fan_only": "Fan Only"
-      }
-    }
-  },
-  "entity": {
-    "climate": {
-      "hive_trv_local": {
-        "name": "Hive TRV Group",
-        "state_attributes": {
-          "last_active_hvac_mode": {
-            "name": "Last Active Mode"
-          },
-          "target_hvac_mode": {
-            "name": "Target HVAC Mode"
-          }
-        }
-      }
-    },
-    "number": {
-      "group_offset": {
-        "name": "Group Offset"
-      }
-    },
-    "sensor": {
-      "temperature": {
-        "name": "Temperature"
       },
-      "humidity": {
-        "name": "Humidity"
+      "groups": {
+        "title": "Room Groups",
+        "menu_options": {
+          "create_group": "Create a new room group",
+          "edit_group": "Edit group members",
+          "set_schedule": "Set a heating schedule",
+          "remove_group": "Remove a room group"
+        }
       },
-      "configuration": {
-        "name": "Configuration"
-      }
-    },
-    "switch": {
-      "main_switch": {
-        "name": "Main Switch"
-      }
-    }
-  },
-  "services": {
-    "set_temperature": {
-      "name": "Set Temperature",
-      "description": "Set the target temperature for the entire group.",
-      "fields": {
-        "entity_id": {
-          "name": "Hive TRV Group",
-          "description": "The group to control."
+      "create_group": {
+        "title": "Create Room Group \u2014 Step 1 of 3",
+        "description": "Enter a name for the new room group.",
+        "data": {
+          "room_name": "Room name"
+        }
+      },
+      "create_group_members": {
+        "title": "Create Room Group \u2014 Step 2 of 3",
+        "description": "Room: {room_name}\n\nEnter Z2M topic(s) for the TRVs in this room, one per line or comma-separated.\nBase topic: {base_topic}\n\nDetected devices:\n{hint}",
+        "data": {
+          "mqtt_topics": "Z2M device topic(s)"
         },
-        "temperature": {
-          "name": "Target Temperature",
-          "description": "The desired temperature."
+        "data_description": {
+          "mqtt_topics": "Enter the full Z2M topic for each TRV, e.g. zigbee2mqtt/Living Room TRV. One per line or comma-separated."
+        }
+      },
+      "create_group_sensors": {
+        "title": "Create Room Group \u2014 Step 3 of 3",
+        "description": "{room_name} \u2014 {member_count} TRV(s) selected.\n\nOptionally add extra temperature sensors.",
+        "data": {
+          "temp_sensors": "Extra temperature sensors (optional)"
+        }
+      },
+      "edit_group": {
+        "title": "Edit Room Group \u2014 Step 1 of 2",
+        "description": "Select the group to edit.",
+        "data": {
+          "room_name": "Room group"
+        }
+      },
+      "edit_group_members": {
+        "title": "Edit Room Group \u2014 Step 2 of 2",
+        "description": "Editing: {room_name}\n\nBase topic: {base_topic}\nEnter Z2M topic(s), one per line or comma-separated.",
+        "data": {
+          "mqtt_topics": "Z2M device topic(s)"
+        }
+      },
+      "set_schedule": {
+        "title": "Set Schedule \u2014 Step 1 of 2",
+        "description": "Select the group to schedule.",
+        "data": {
+          "room_name": "Room group"
+        }
+      },
+      "set_schedule_preset": {
+        "title": "Set Schedule \u2014 Step 2 of 2",
+        "description": "Room: {room_name}",
+        "data": {
+          "preset": "Schedule preset"
         },
-        "target_temp_high": {
-          "name": "Target High",
-          "description": "Upper limit for heat/cool mode."
-        },
-        "target_temp_low": {
-          "name": "Target Low",
-          "description": "Lower limit for heat/cool mode."
-        },
-        "hvac_mode": {
-          "name": "HVAC Mode",
-          "description": "Optionally change the mode."
+        "data_description": {
+          "preset": "For custom slot schedules use the hive_trv_local.set_schedule service."
+        }
+      },
+      "remove_group": {
+        "title": "Remove Room Group",
+        "description": "Select the group to remove.",
+        "data": {
+          "room_name": "Room group to remove"
         }
       }
-    },
-    "set_schedule_entity": {
-      "name": "Set Schedule Entity",
-      "description": "Switch the active schedule or calendar entity at runtime. If omitted or set to null, the group reverts to its configured default and re-applies the current slot.",
-      "fields": {
-        "schedule_entity": {
-          "name": "Schedule / Calendar Entity",
-          "description": "The schedule.* or calendar.* entity to activate (e.g. schedule.holiday or calendar.vacation). Set to null or empty to restore the configured default."
-        }
-      }
-    },
-    "set_schedule_bypass_entity": {
-      "name": "Set Schedule Bypass Entity",
-      "description": "Switch the active bypass entity at runtime (e.g. to swap between different vacation calendars). Set to null to restore the configured default.",
-      "fields": {
-        "schedule_bypass_entity": {
-          "name": "Bypass Entity",
-          "description": "The schedule.* or calendar.* entity to use as bypass (e.g. calendar.vacation). Set to null or empty to restore the configured default."
-        }
-      }
-    },
-    "boost": {
-      "name": "Boost",
-      "description": "Temporarily set the group to a target temperature for a fixed duration. When the timer expires, the group restores automatically to the active schedule slot (if configured) or its previous target state.",
-      "fields": {
-        "temperature": {
-          "name": "Temperature",
-          "description": "Absolute target temperature during the boost (e.g. 24.0). Mutually exclusive with temperature_offset."
-        },
-        "temperature_offset": {
-          "name": "Temperature Offset",
-          "description": "Relative offset added to the current target temperature (e.g. +3.0 or -2.0). Mutually exclusive with temperature."
-        },
-        "duration": {
-          "name": "Duration (minutes)",
-          "description": "How long the boost should last in minutes."
-        }
-      }
-    },
-    "apply_config": {
-      "name": "Apply Configuration",
-      "description": "Apply a portable JSON configuration to a group. This is useful for copying logic settings between groups or restoring a backup. Identity keys (name) are protected.",
-      "fields": {
-        "settings": {
-          "name": "Settings (JSON)",
-          "description": "The JSON configuration object to apply. Use the 'settings_json' attribute from a Configuration Sensor."
-        },
-        "include_member_list": {
-          "name": "Include Member List",
-          "description": "If true, also overwrites the list of member entities and isolation entities."
-        },
-        "include_entity_selectors": {
-          "name": "Include Entity Selectors",
-          "description": "If true, also overwrites linked sensors (temp, humidity, presence, window, etc.) and per-member offsets."
-        }
-      }
-    }
-  },
-  "issues": {
-    "member_unavailable": {
-      "title": "Member Device Unavailable",
-      "description": "One or more devices in {group_name} are offline. The group will keep working with what it has.\n\nUnavailable: {unavailable_entities}"
-    },
-    "no_members_available": {
-      "title": "No Members Available",
-      "description": "Group {group_name} has no active members and is effectively offline.\n\nCheck: {member_entities}"
-    },
-    "conflicting_features": {
-      "title": "Feature Conflicts",
-      "description": "Group {group_name} has members with different features. Functionality might be limited to what everyone supports.\n\nConflicting: {conflicting_entities}"
-    }
-  },
-  "device_automation": {
-    "trigger_type": {
-      "hvac_mode_changed": "HVAC mode changed",
-      "temperature_target_changed": "Target temperature changed",
-      "current_temperature_changed": "Current temperature changed",
-      "group_turned_on": "Group turned on",
-      "group_turned_off": "Group turned off"
-    },
-    "condition_type": {
-      "is_hvac_mode": "HVAC mode is",
-      "is_temperature_above": "Temperature is above",
-      "is_temperature_below": "Temperature is below",
-      "is_group_available": "Group is available"
-    },
-    "action_type": {
-      "set_hvac_mode": "Set HVAC mode",
-      "set_temperature": "Set temperature",
-      "turn_on": "Turn on",
-      "turn_off": "Turn off"
     }
   }
 }
