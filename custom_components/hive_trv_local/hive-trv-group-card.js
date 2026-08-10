@@ -265,7 +265,20 @@ class HiveTRVGroupCard extends HTMLElement {
 
 customElements.define("hive-trv-group-card",HiveTRVGroupCard);
 window.customCards=window.customCards||[];
-window.customCards.push({type:"hive-trv-group-card",name:"Hive TRV Group Card",
-  description:`v${GROUP_CARD_VERSION} — Hive TRV Local room group card`,preview:true,
-  documentationURL:"https://github.com/gashwell/Hive-TRV-Local-v2"});
+window.customCards.push({
+  type:"hive-trv-group-card",
+  name:"Hive TRV Group Card",
+  description:`v${GROUP_CARD_VERSION} — Hive TRV Local room group card`,
+  preview:true,
+  documentationURL:"https://github.com/gashwell/Hive-TRV-Local-v2",
+  getEntitySuggestion:(hass,entityId)=>{
+    if(!entityId.startsWith("climate.")) return null;
+    const s=hass.states[entityId];
+    if(!s) return null;
+    // Must be a Hive TRV Local room group (has members array attribute)
+    if(!Array.isArray(s.attributes.members)) return null;
+    return {config:{type:"custom:hive-trv-group-card",entity:entityId}};
+  },
+});
 console.info(`%c HIVE-TRV-GROUP-CARD %c v${GROUP_CARD_VERSION} `,"color:#7c3aed;font-weight:700;background:#000;padding:2px 4px","background:#7c3aed;color:#fff;padding:2px 4px");
+
