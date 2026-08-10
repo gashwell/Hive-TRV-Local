@@ -5,7 +5,7 @@ DOMAIN    = "hive_trv_local"
 PLATFORMS = ["climate", "button", "number"]
 
 # ── Config entry ───────────────────────────────────────────────────────────────
-CONFIG_VERSION = 3
+CONFIG_VERSION = 1
 SCHEMA_VERSION = 1
 
 CONF_BOILER_ENTITY      = "boiler_entity"
