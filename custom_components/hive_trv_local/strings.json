@@ -112,8 +112,8 @@
         }
       },
       "create_group_sensors": {
-        "title": "Create Room Group \u2014 Step 3 of 3",
-        "description": "{room_name} \u2014 {member_count} TRV(s) selected.\n\nOptionally add extra temperature sensors.",
+        "title": "Create Room Group \u2014 Step 3 of 4",
+        "description": "{room_name} \u2014 {member_count} TRV(s) selected.\n\nOptionally add extra temperature sensors (e.g. a room sensor separate from the TRVs).",
         "data": {
           "temp_sensors": "Extra temperature sensors (optional)"
         }
@@ -154,6 +154,18 @@
         "description": "Select the group to remove. Member TRVs will be restored as individual devices.",
         "data": {
           "room_name": "Room group to remove"
+        }
+      },
+      "create_group_frost": {
+        "title": "Create Room Group \u2014 Step 4 of 4",
+        "description": "{open_meteo}\n\nSet the outdoor temperature threshold below which frost protection activates.",
+        "data": {
+          "frost_weather_entity": "Open-Meteo weather entity",
+          "frost_temperature": "Frost protection threshold (\u00b0C)"
+        },
+        "data_description": {
+          "frost_weather_entity": "When outdoor temperature falls at or below the threshold, heating will activate automatically.",
+          "frost_temperature": "Frost protection kicks in when outdoor temperature reaches this value. Recommended: 2\u00b0C."
         }
       }
     }
