@@ -252,6 +252,8 @@ async def _create_room(
         member_entity_ids=room_data.get("members", []),
         temp_sensor_entity_ids=room_data.get("temp_sensors", []),
         store=store,
+        frost_weather_entity=room_data.get("frost_weather"),
+        frost_temperature=float(room_data.get("frost_temperature", 2.0)),
     )
     await rc.async_setup()
     rooms[room_id] = rc
@@ -342,3 +344,4 @@ def _register_group_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_GROUP_SET_SCHEDULE,     _set_schedule,   _SCHED_S)
     hass.services.async_register(DOMAIN, SERVICE_GROUP_CLEAR_SCHEDULE,   _clear_schedule, _EID)
     hass.services.async_register(DOMAIN, SERVICE_GROUP_ADVANCE_SCHEDULE, _advance,        _EID)
+
