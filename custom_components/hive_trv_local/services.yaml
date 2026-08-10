@@ -1,103 +1,87 @@
-set_schedule_entity:
-  name: Set Schedule Entity
-  description: Changes the active schedule entity used by the Hive TRV Group.
-  target:
-    entity:
-      integration: hive_trv_local
-      domain: climate
-  fields:
-    schedule_entity:
-      name: Schedule Entity
-      description: The new schedule entity to use (e.g. schedule.holiday). Set to null or empty to restore the configured default schedule.
-      selector:
-        entity:
-          filter:
-            - domain: schedule
-            - domain: calendar
-      required: false
-
-set_schedule_bypass_entity:
-  name: Set Schedule Bypass Entity
-  description: Switch the active bypass entity at runtime (e.g. to swap between different vacation calendars). Set to null to restore the configured default.
-  target:
-    entity:
-      integration: hive_trv_local
-      domain: climate
-  fields:
-    schedule_bypass_entity:
-      name: Bypass Entity
-      description: The schedule.* or calendar.* entity to use as bypass (e.g. calendar.vacation). Set to null or empty to restore the configured default.
-      selector:
-        entity:
-          filter:
-            - domain: schedule
-            - domain: calendar
-      required: false
-
 boost:
   name: Boost
-  description: Temporarily sets the group to a target temperature for a specified duration, then restores the previous state. Specify either an absolute temperature or a relative offset.
-  target:
-    entity:
-      integration: hive_trv_local
-      domain: climate
+  description: Start a timed boost on a room group.
   fields:
+    entity_id:
+      name: Entity
+      description: The room group climate entity.
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_trv_local
     temperature:
       name: Temperature
-      description: Absolute target temperature during the boost (e.g. 24.0). Mutually exclusive with temperature_offset.
-      required: false
+      description: Boost target temperature (°C). Uses stored default if omitted.
       selector:
         number:
           min: 5
-          max: 35
+          max: 32
           step: 0.5
           unit_of_measurement: "°C"
-    temperature_offset:
-      name: Temperature Offset
-      description: Relative offset added to the current target temperature (e.g. +3.0 or -2.0). Mutually exclusive with temperature.
-      required: false
-      selector:
-        number:
-          min: -20
-          max: 20
-          step: 0.5
-          unit_of_measurement: "°C"
-    duration:
+          mode: slider
+    duration_minutes:
       name: Duration
-      description: How long the boost should last (in minutes).
-      required: true
+      description: Boost duration in minutes. Uses stored default if omitted.
       selector:
         number:
           min: 1
-          max: 480
+          max: 1440
           step: 1
-          unit_of_measurement: "min"
+          unit_of_measurement: min
+          mode: box
 
-apply_config:
-  name: Apply Configuration
-  description: Overwrites existing group settings with a JSON configuration template. Identity keys (name) are always protected.
-  target:
-    entity:
-      integration: hive_trv_local
-      domain: climate
+end_boost:
+  name: End Boost
+  description: Cancel an active boost on a room group.
   fields:
-    settings:
-      name: Settings (JSON)
-      description: The JSON configuration object to apply. Use the 'settings_json' attribute from a Configuration Sensor.
+    entity_id:
+      name: Entity
       required: true
       selector:
-        template:
-    include_member_list:
-      name: Include Member List
-      description: If true, also overwrites the list of member entities and isolation entities.
+        entity:
+          domain: climate
+          integration: hive_trv_local
+
+set_schedule:
+  name: Set Schedule
+  description: Set a weekly heating schedule on a room group.
+  fields:
+    entity_id:
+      name: Entity
       required: true
-      default: false
       selector:
-        boolean:
-    include_entity_selectors:
-      name: Include Entity Selectors
-      description: If true, also overwrites linked sensors (temp, humidity, presence, window, etc.) and per-member offsets.
+        entity:
+          domain: climate
+          integration: hive_trv_local
+    schedule:
+      name: Schedule
+      description: List of slots with days (0=Mon), time (HH:MM), and temperature.
       required: true
-      default: false
+      example: '[{"days":[0,1,2,3,4],"time":"07:00","temperature":21.0}]'
       selector:
-        boolean:
+        object:
+
+clear_schedule:
+  name: Clear Schedule
+  description: Remove the schedule from a room group (returns to manual mode).
+  fields:
+    entity_id:
+      name: Entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_trv_local
+
+advance_schedule:
+  name: Advance Schedule
+  description: Skip to the next scheduled slot immediately.
+  fields:
+    entity_id:
+      name: Entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_trv_local
