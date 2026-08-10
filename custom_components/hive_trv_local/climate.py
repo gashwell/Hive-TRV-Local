@@ -1,1309 +1,166 @@
-"""This platform allows several climate devices to be grouped into one climate device."""
+"""Climate platform — room group entities only.
+
+Individual TRV climate entities are provided by the Z2M integration.
+This platform creates one climate entity per room group.
+"""
 from __future__ import annotations
 
-from dataclasses import fields, replace
-from functools import reduce
-import json
-import logging
-import time
-from statistics import mean, median
-from typing import Any, Awaitable, Callable
-import voluptuous as vol
+from typing import Any
 
 from homeassistant.components.climate import (
-    ATTR_CURRENT_HUMIDITY,
-    ATTR_CURRENT_TEMPERATURE,
-    ATTR_FAN_MODE,
-    ATTR_FAN_MODES,
-    ATTR_HUMIDITY,
-    ATTR_HVAC_ACTION,
-    ATTR_HVAC_MODE,
-    ATTR_HVAC_MODES,
-    ATTR_MAX_HUMIDITY,
-    ATTR_MAX_TEMP,
-    ATTR_MIN_HUMIDITY,
-    ATTR_MIN_TEMP,
-    ATTR_PRESET_MODE,
-    ATTR_PRESET_MODES,
-    ATTR_SWING_HORIZONTAL_MODE,
-    ATTR_SWING_HORIZONTAL_MODES,
-    ATTR_SWING_MODE,
-    ATTR_SWING_MODES,
-    ATTR_TARGET_TEMP_HIGH,
-    ATTR_TARGET_TEMP_LOW,
-    ATTR_TARGET_TEMP_STEP,
-    DEFAULT_MAX_HUMIDITY,
-    DEFAULT_MAX_TEMP,
-    DEFAULT_MIN_HUMIDITY,
-    DEFAULT_MIN_TEMP,
-    ClimateEntity,
-    ClimateEntityFeature,
-    HVACAction,
-    HVACMode,
-)
-from homeassistant.components.group.entity import GroupEntity
-from homeassistant.components.group.util import (
-    find_state_attributes,
-    most_frequent_attribute,
-    reduce_attribute,
-    states_equal,
+    ClimateEntity, ClimateEntityFeature, HVACAction, HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    ATTR_SUPPORTED_FEATURES,
-    ATTR_TEMPERATURE,
-    CONF_ENTITIES,
-    CONF_NAME,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-)
-from homeassistant.helpers import config_validation as cv
-from homeassistant.core import HomeAssistant, State, callback, Event
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
-from homeassistant.helpers import entity_registry as er
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    ATTR_ACTIVE_SCHEDULE_ENTITY,
-    ATTR_GROUP_OFFSET,
-    ATTR_INCLUDE_ENTITY_SELECTORS,
-    ATTR_INCLUDE_MEMBER_LIST,
-    ATTR_LAST_ACTIVE_HVAC_MODE,
-    ATTR_SCHEDULE_BYPASS_ENTITY,
-    ATTR_SCHEDULE_ENTITY,
-    ATTR_SETTINGS,
-    CONF_ADVANCED_MODE,
-    CONF_DEBOUNCE_DELAY,
-    CONF_EXPOSE_MEMBER_ENTITIES,
-    CONF_FEATURE_STRATEGY,
-    CONF_GRACE_PERIOD,
-    CONF_HUMIDITY_CURRENT_AVG,
-    CONF_HUMIDITY_SENSORS,
-    CONF_HUMIDITY_TARGET_AVG,
-    CONF_HUMIDITY_TARGET_ROUND,
-    CONF_HUMIDITY_UPDATE_TARGETS,
-    CONF_HUMIDITY_USE_MASTER,
-    CONF_HVAC_MODE_STRATEGY,
-    CONF_IGNORE_OFF_MEMBERS_TEMPERATURE,
-    CONF_ISOLATION_ENTITIES,
-    CONF_ISOLATION_SENSOR,
-    CONF_MASTER_ENTITY,
-    CONF_MEMBER_OFFSET_CORRECTION,
-    CONF_MEMBER_TEMP_OFFSETS,
-    CONF_MIN_TEMP_OFF,
-    CONF_PERSIST_ACTIVE_SCHEDULE,
-    CONF_PRESENCE_SENSOR,
-    CONF_PRESENCE_ZONE,
-    CONF_RETRY_ATTEMPTS,
-    CONF_RETRY_DELAY,
-    CONF_ROOM_SENSOR,
-    CONF_SCHEDULE_BYPASS_ENTITY,
-    CONF_SCHEDULE_ENTITY,
-    CONF_STAGGERED_CALL_DELAY,
-    CONF_TEMP_CURRENT_AVG,
-    CONF_TEMP_SENSORS,
-    CONF_TEMP_TARGET_AVG,
-    CONF_TEMP_TARGET_ROUND,
-    CONF_TEMP_UPDATE_TARGETS,
-    CONF_TEMP_USE_MASTER,
-    CONF_WINDOW_ADOPT_MANUAL_CHANGES,
-    CONF_ZONE_SENSOR,
-    CONF_RANGE_TEMPLATE_ENTITIES,
-    CONF_RANGE_TEMPLATE_DEADBAND_ACTION,
-    DEFAULT_GRACE_PERIOD,
-    DOMAIN,
-    ENTITY_SELECTOR_KEYS,
-    FLOAT_TOLERANCE,
-    IDENTITY_KEYS,
-    MEMBER_LIST_KEYS,
-    SERVICE_APPLY_CONFIG,
-    SERVICE_BOOST,
-    SERVICE_SET_SCHEDULE_BYPASS_ENTITY,
-    SERVICE_SET_SCHEDULE_ENTITY,
-    AdoptManualChanges,
-    AverageOption,
-    FeatureStrategy,
-    HvacModeStrategy,
-    RoundOption,
-    SyncMode,
-    RangeTemplateDeadbandAction,
+    DATA_STORE, DOMAIN,
+    EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED, EVENT_ROOM_UPDATED,
+    MODE_BOOST, MODE_MANUAL, MODE_OFF, MODE_SCHEDULE,
 )
-from . import VALID_CONFIG_KEYS
-from .calibration import CalibrationHandler
-from .isolation import MemberIsolationHandler
-from .override import (
-    BoostOverrideManager,
-    OverrideHandler,
-    SwitchOverrideManager,
-    WindowOverrideManager,
-)
-from .presence import PresenceHandler, PresenceOverrideManager
-from .member_template import RangeTemplate, _apply_range_template, initialize_last_modes
+from .room import HiveRoomCoordinator
 
-from .schedule import ScheduleCaller, ScheduleHandler, ScheduleBypassHandler
-from .service_call import (
-    ClimateCallHandler,
-    OverrideCallHandler,
-    PresenceCallHandler,
-    ScheduleCallHandler,
-    SwitchCallHandler,
-    SwitchEnforceCallHandler,
-    SyncCallHandler,
-    WindowControlCallHandler,
-)
-from .state import (
-    ChangeState,
-    ClimateState,
-    CurrentState,
-    RunState,
-    TargetState,
-    ClimateStateManager,
-    IsolationStateManager,
-    ScheduleStateManager,
-    SyncModeStateManager,
-    WindowControlStateManager,
-)
-from .sync_mode import SyncModeHandler
-from .window_control import WindowControlHandler
-from .meta_processor import SlotMetaProcessor
-from .status import build_extra_state_attributes
-
-CALC_TYPES: dict[AverageOption, Callable[..., float]] = {
-    AverageOption.MIN: min,
-    AverageOption.MAX: max,
-    AverageOption.MEAN: mean,
-    AverageOption.MEDIAN: median,
-}
-
-# No limit on parallel updates to enable a group calling another group
-PARALLEL_UPDATES = 0
-
-# Supported features for the climate group entity.
-SUPPORTED_FEATURES = (
+_PRESETS  = [MODE_MANUAL, MODE_SCHEDULE, MODE_BOOST]
+_FEATURES = (
     ClimateEntityFeature.TARGET_TEMPERATURE
-    | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-    | ClimateEntityFeature.TARGET_HUMIDITY
-    | ClimateEntityFeature.FAN_MODE
     | ClimateEntityFeature.PRESET_MODE
-    | ClimateEntityFeature.SWING_MODE
-    | ClimateEntityFeature.TURN_OFF
     | ClimateEntityFeature.TURN_ON
-    | ClimateEntityFeature.SWING_HORIZONTAL_MODE
+    | ClimateEntityFeature.TURN_OFF
 )
-
-DEFAULT_SUPPORTED_FEATURES = (
-    ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
-)
-
-_LOGGER = logging.getLogger(__name__)
-
-
-def _warn_missing_entities(hass: HomeAssistant, config: dict[str, Any], group_entity_id: str) -> None:
-    """Log a warning for each configured entity that no longer exists in the state machine."""
-    registry = er.async_get(hass)
-    checks: list[tuple[str, str]] = []
-    for key in (CONF_ROOM_SENSOR, CONF_ZONE_SENSOR, CONF_ISOLATION_SENSOR, CONF_SCHEDULE_ENTITY, CONF_SCHEDULE_BYPASS_ENTITY):
-        if val := config.get(key):
-            checks.append((key, val))
-    for key in (CONF_PRESENCE_SENSOR, CONF_PRESENCE_ZONE, CONF_ISOLATION_ENTITIES, CONF_TEMP_UPDATE_TARGETS, CONF_HUMIDITY_UPDATE_TARGETS):
-        for eid in config.get(key, []):
-            checks.append((key, eid))
-    for key, eid in checks:
-        if hass.states.get(eid) is None and registry.async_get(eid) is None:
-            _LOGGER.warning(
-                "[%s] Configured entity '%s' (option '%s') does not exist — "
-                "it may have been deleted. Update the integration options.",
-                group_entity_id, eid, key,
-            )
-
-
-def filter_cgh_sensors(hass: HomeAssistant, entity_ids: list[str], label: str, group_entity_id: str = "") -> list[str]:
-    """Remove own CGH sensor entities from a sensor list and log a warning for each one found."""
-    registry = er.async_get(hass)
-    valid_sensors: list[str] = []
-    for eid in entity_ids:
-        entry = registry.async_get(eid)
-        if entry and entry.platform == DOMAIN:
-            _LOGGER.warning(
-                "[%s] Sensor loop protection: '%s' is a CGH sensor and cannot be used as "
-                "an external %s sensor — ignoring. Remove it in the integration options.",
-                group_entity_id, eid, label
-            )
-        else:
-            valid_sensors.append(eid)
-    return valid_sensors
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Initialize Hive TRV Group config entry."""
+    _entities: dict[str, HiveRoomClimate] = {}
 
-    config = {**config_entry.options}
+    @callback
+    def _on_room_added(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        room_id = event.data.get("room_id")
+        rc      = event.data.get("coordinator")
+        if rc and room_id not in _entities:
+            e = HiveRoomClimate(rc)
+            _entities[room_id] = e
+            async_add_entities([e])
 
-    registry = er.async_get(hass)
-    entities = er.async_validate_entity_ids(registry, config[CONF_ENTITIES])
+    @callback
+    def _on_room_removed(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        e = _entities.pop(event.data.get("room_id"), None)
+        if e:
+            hass.async_create_task(e.async_remove())
 
-    group = ClimateGroupHelper(
-        hass=hass,
-        unique_id=config_entry.unique_id,
-        name=config.get(CONF_NAME, config_entry.title),
-        entity_ids=entities,
-        config=config,
-    )
+    @callback
+    def _on_room_updated(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        e = _entities.get(event.data.get("room_id"))
+        if e:
+            e.async_write_ha_state()
 
-    # Store reference for other platforms (switch, etc.) to access the group entity
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].setdefault(config_entry.entry_id, {})
-    hass.data[DOMAIN][config_entry.entry_id]["group"] = group
-
-    async_add_entities([group])
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_ADDED,   _on_room_added))
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_REMOVED, _on_room_removed))
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_UPDATED, _on_room_updated))
 
 
-class ClimateGroupHelper(GroupEntity, ClimateEntity, RestoreEntity):
-    """Representation of a climate group."""
+class HiveRoomClimate(CoordinatorEntity[HiveRoomCoordinator], ClimateEntity):
+    """Room group climate entity.
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        unique_id: str | None,
-        name: str,
-        entity_ids: list[str],
-        config: dict[str, Any],
-    ) -> None:
-        """Initialize a climate group."""
+    Temperature = average of all member TRVs.
+    Commands fan out to all members via HA service calls.
+    """
 
-        # Home Assistant
-        self.hass = hass
-        self.entry: ConfigEntry | None = None
-        self.config = config
-        self.climate_entity_ids = entity_ids
-        self.event: Event | None = None
-        self._attr_name = name
-        self._attr_unique_id = unique_id
-        self._event_entity_id: str | None = None
+    _attr_temperature_unit        = UnitOfTemperature.CELSIUS
+    _attr_hvac_modes              = [HVACMode.HEAT, HVACMode.OFF]
+    _attr_min_temp                = 5.0
+    _attr_max_temp                = 32.0
+    _attr_target_temperature_step = 0.5
+    _attr_has_entity_name         = True
+    _attr_supported_features      = _FEATURES
 
-        # Advanced mode
-        self._advanced_mode: bool = config.get(CONF_ADVANCED_MODE, False)
-
-        def _get_adv(key: str, fallback: Any = None) -> Any:
-            """Return config[key] only in advanced mode, else fallback."""
-            return config.get(key, fallback) if self._advanced_mode else fallback
-
-        # Master entity
-        self._master_entity_id = _get_adv(CONF_MASTER_ENTITY)
-        self._temp_use_master = _get_adv(CONF_TEMP_USE_MASTER, False)
-        self._humidity_use_master = _get_adv(CONF_HUMIDITY_USE_MASTER, False)
-        # Temperature calculation options
-        self._temp_current_avg_calc = CALC_TYPES[config.get(CONF_TEMP_CURRENT_AVG, AverageOption.MEAN)]
-        self._temp_target_avg_calc = CALC_TYPES[config.get(CONF_TEMP_TARGET_AVG, AverageOption.MEAN)]
-        self._temp_round = config.get(CONF_TEMP_TARGET_ROUND, RoundOption.NONE)
-        # Humidity calculation options
-        self._humidity_current_avg_calc = CALC_TYPES[config.get(CONF_HUMIDITY_CURRENT_AVG, AverageOption.MEAN)]
-        self._humidity_target_avg_calc = CALC_TYPES[config.get(CONF_HUMIDITY_TARGET_AVG, AverageOption.MEAN)]
-        self._humidity_round = config.get(CONF_HUMIDITY_TARGET_ROUND, RoundOption.NONE)
-        # HVAC mode strategy
-        self._hvac_mode_strategy = config.get(CONF_HVAC_MODE_STRATEGY, HvacModeStrategy.NORMAL)
-        self._feature_strategy = config.get(CONF_FEATURE_STRATEGY, FeatureStrategy.INTERSECTION)
-        self.debounce_delay = config.get(CONF_DEBOUNCE_DELAY, 0)
-        self.retry_attempts = int(config.get(CONF_RETRY_ATTEMPTS, 0))
-        self.retry_delay = config.get(CONF_RETRY_DELAY, 1)
-        self.stagger_delay = config.get(CONF_STAGGERED_CALL_DELAY, 0.0)
-        self.temp_sensor_entity_ids = _get_adv(CONF_TEMP_SENSORS, [])
-        self.temp_update_target_entity_ids = _get_adv(CONF_TEMP_UPDATE_TARGETS, [])
-        self.humidity_sensor_entity_ids = _get_adv(CONF_HUMIDITY_SENSORS, [])
-        self.humidity_update_target_entity_ids = _get_adv(CONF_HUMIDITY_UPDATE_TARGETS, [])
-        self._expose_member_entities = config.get(CONF_EXPOSE_MEMBER_ENTITIES, False)
-        self.min_temp_off = config.get(CONF_MIN_TEMP_OFF, False)
-        self._window_adopt_manual_changes = config.get(CONF_WINDOW_ADOPT_MANUAL_CHANGES, AdoptManualChanges.OFF)
-        self._temp_offset_map: dict[str, float] = config.get(CONF_MEMBER_TEMP_OFFSETS, {})
-        self._member_offset_correction: bool = config.get(CONF_MEMBER_OFFSET_CORRECTION, True)
-        self._ignore_off_members_temperature: bool = config.get(CONF_IGNORE_OFF_MEMBERS_TEMPERATURE, False)
-        self._member_temp_avg = None
-
-        # Range Template (Member Template Pattern)
-        template_entities = _get_adv(CONF_RANGE_TEMPLATE_ENTITIES, [])
-        if template_entities:
-            deadband = config.get(CONF_RANGE_TEMPLATE_DEADBAND_ACTION, RangeTemplateDeadbandAction.OFF)
-            self.range_template = RangeTemplate(
-                entity_ids=frozenset(template_entities),
-                deadband_action=deadband,
-            )
-        else:
-            self.range_template = None
-
-        self.calibration_handler = CalibrationHandler(self)
-
-        # State variables
-        self.states: list[State] = []
-        self.shared_target_state = TargetState()
-        self.current_group_state = CurrentState()
-        self.change_state: ChangeState | None = None
-        self.master_state: State | None = None
-        self.current_master_state = CurrentState()
-        self.run_state = RunState()
-        self._grace_period = float(config.get(CONF_GRACE_PERIOD, DEFAULT_GRACE_PERIOD))
-        self._grace_period_unsub: Callable[[], None] | None = None
-        self._grace_period_last_ts: float | None = None
-
-        # State managers
-        self.climate_state_manager = ClimateStateManager(self)
-        self.isolation_state_manager = IsolationStateManager(self)
-        self.schedule_state_manager = ScheduleStateManager(self)
-        self.sync_mode_state_manager = SyncModeStateManager(self)
-        self.window_control_state_manager = WindowControlStateManager(self)
-
-        # Call handlers
-        self.climate_call_handler = ClimateCallHandler(self)
-        self.offset_entity_id: str | None = None
-        self.offset_set_callback: Callable[[float], Awaitable[None]] | None = None
-        self.slot_meta_processor = SlotMetaProcessor(self)
-        self.override_call_handler = OverrideCallHandler(self)
-        self.presence_call_handler = PresenceCallHandler(self)
-        self.schedule_call_handler = ScheduleCallHandler(self)
-        self.switch_call_handler = SwitchCallHandler(self)
-        self.switch_enforce_call_handler = SwitchEnforceCallHandler(self)
-        self.sync_mode_call_handler = SyncCallHandler(self)
-        self.window_control_call_handler = WindowControlCallHandler(self)
-
-        # Modules
-        self.boost_override_manager = BoostOverrideManager(self)
-        self.member_isolation_handler = MemberIsolationHandler(self)
-        self.override_handler = OverrideHandler(self)
-        self.presence_handler = PresenceHandler(self)
-        self.presence_override_manager = PresenceOverrideManager(self)
-        self.schedule_handler = ScheduleHandler(self)
-        self.schedule_bypass_handler = ScheduleBypassHandler(self)
-        self.switch_override_manager = SwitchOverrideManager(self)
-        self.sync_mode_handler = SyncModeHandler(self)
-        self.window_control_handler = WindowControlHandler(self)
-        self.window_override_manager = WindowOverrideManager(self)
-
-        # Attributes
-        self._attr_supported_features = DEFAULT_SUPPORTED_FEATURES
-        self._attr_temperature_unit = hass.config.units.temperature_unit
-
-        self._attr_available = False
-        self._attr_assumed_state = True
-
-        self._current_hvac_modes: list[str] = []
-
-        self._attr_current_temperature = None
-        self._attr_target_temperature = None
-        self._attr_target_temperature_step = None
-        self._attr_target_temperature_low = None
-        self._attr_target_temperature_high = None
-        self._attr_min_temp = DEFAULT_MIN_TEMP
-        self._attr_max_temp = DEFAULT_MAX_TEMP
-        self._attr_current_humidity = None
-        self._attr_target_humidity = None
-        self._attr_min_humidity = DEFAULT_MIN_HUMIDITY
-        self._attr_max_humidity = DEFAULT_MAX_HUMIDITY
-
-        self._attr_hvac_modes = [HVACMode.OFF]
-        self._attr_hvac_mode = None
-
-        self._attr_hvac_action = None
-
-        self._attr_fan_modes = None
-        self._attr_fan_mode = None
-
-        self._attr_preset_modes = None
-        self._attr_preset_mode = None
-
-        self._attr_swing_modes = None
-        self._attr_swing_mode = None
-
-        self._attr_swing_horizontal_modes = None
-        self._attr_swing_horizontal_mode = None
-
-        self._attr_translation_key = "hive_trv_local"
+    def __init__(self, coordinator: HiveRoomCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"room_{coordinator.room_id}_climate"
+        self._attr_name      = coordinator.room_name
 
     @property
-    def device_info(self) -> dict[str, Any]:  # type: ignore[override]
-        """Return the device info."""
+    def device_info(self) -> dict:
         return {
-            "identifiers": {(DOMAIN, self._attr_unique_id)},
-            "name": self._attr_name,
+            "identifiers":  {(DOMAIN, f"room_{self.coordinator.room_id}")},
+            "name":         f"{self.coordinator.room_name}",
+            "model":        "Room Group",
             "manufacturer": "Hive TRV Local",
         }
 
     @property
-    def advanced_mode(self) -> bool:
-        """Return True if the group is in advanced mode."""
-        return self._advanced_mode
+    def available(self) -> bool:
+        return self.coordinator.available
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return entity specific state attributes."""
-        return build_extra_state_attributes(self)
-
-    async def async_added_to_hass(self) -> None:
-        """Restore states before registering listeners."""
-        if self.platform:
-            self.entry = self.platform.config_entry
-
-        # Some integrations, such as HomeKit, Google Home, and Alexa
-        # require final property lists during the initialization process e.g. hvac_modes.
-        # Therefore, we restore some of the last known states before registering the listeners.
-        if (last_state := await self.async_get_last_state()) is not None:
-             self._restore_state(last_state)
-
-        # Range Template: seed last_physical_mode *after* the target state
-        # has been restored, so the deviation fallback in _expected_mode_for()
-        # is not blind at first start.
-        if self.range_template is not None:
-            initialize_last_modes(self)
-
-        # Guard against feedback loops from misconfigured CGH sensors.
-        # Filter sensor lists and rebuild _entity_ids so the listener never subscribes to our own sensors.
-        self.temp_sensor_entity_ids = filter_cgh_sensors(
-            self.hass, self.temp_sensor_entity_ids, "temperature", self.entity_id
-        )
-        self.humidity_sensor_entity_ids = filter_cgh_sensors(
-            self.hass, self.humidity_sensor_entity_ids, "humidity", self.entity_id
-        )
-        self._entity_ids = (
-            self.climate_entity_ids
-            + self.temp_sensor_entity_ids
-            + self.humidity_sensor_entity_ids
-        )
-
-        _warn_missing_entities(self.hass, self.config, self.entity_id)
-
-        _LOGGER.debug(
-            "[%s] Registering core listeners: members=%s, temp_sensors=%s, humidity_sensors=%s",
-            self.entity_id,
-            self.climate_entity_ids,
-            self.temp_sensor_entity_ids,
-            self.humidity_sensor_entity_ids,
-        )
-
-        # Register listeners
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, self._entity_ids, self._state_change_listener  # type: ignore[arg-type]
-            )
-        )
-
-        if self.advanced_mode:
-            # Setup calibration handler (builds target→member mapping, starts heartbeat)
-            await self.calibration_handler.async_setup()
-
-            # Setup window control (subscribes to sensor events)
-            await self.window_control_handler.async_setup()
-
-            # Setup override handler (registers call triggers for boost abort)
-            self.override_handler.async_setup()
-
-            # Setup presence handler (subscribes to sensor events)
-            await self.presence_handler.async_setup()
-
-            # Setup schedule handler (subscribes to schedule entity and execution hooks)
-            await self.schedule_handler.async_setup()
-            await self.schedule_bypass_handler.async_setup()
-
-            # Setup member isolation handler (subscribes to isolation sensor events)
-            await self.member_isolation_handler.async_setup()
-
-        # Update initial state
-        self.async_defer_or_update_ha_state()
-
-        # Register services
-        if self.platform and self.advanced_mode:
-            self.platform.async_register_entity_service(
-                SERVICE_SET_SCHEDULE_ENTITY,
-                {vol.Optional(ATTR_SCHEDULE_ENTITY): vol.Any(cv.entity_id, None)},
-                "async_service_set_schedule_entity",
-            )
-            self.platform.async_register_entity_service(
-                SERVICE_SET_SCHEDULE_BYPASS_ENTITY,
-                {vol.Optional(ATTR_SCHEDULE_BYPASS_ENTITY): vol.Any(cv.entity_id, None)},
-                "async_service_set_schedule_bypass_entity",
-            )
-            self.platform.async_register_entity_service(
-                SERVICE_BOOST,
-                {
-                    vol.Optional("temperature"): vol.Coerce(float),
-                    vol.Optional("temperature_offset"): vol.Coerce(float),
-                    vol.Required("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-                },
-                "async_service_boost",
-            )
-
-        # Config management service (available in all modes)
-        if self.platform:
-            self.platform.async_register_entity_service(
-                SERVICE_APPLY_CONFIG,
-                {
-                    vol.Required(ATTR_SETTINGS): cv.string,
-                    vol.Optional(ATTR_INCLUDE_MEMBER_LIST, default=False): cv.boolean,
-                    vol.Optional(ATTR_INCLUDE_ENTITY_SELECTORS, default=False): cv.boolean,
-                },
-                "async_service_apply_config",
-            )
-
-    async def async_service_set_schedule_entity(self, schedule_entity: str | None = None) -> None:
-        """Handle set_schedule_entity service."""
-        await self.schedule_handler.update_schedule_entity(schedule_entity)
-
-    async def async_service_set_schedule_bypass_entity(self, schedule_bypass_entity: str | None = None) -> None:
-        """Handle set_schedule_bypass_entity service."""
-        await self.schedule_bypass_handler.update_bypass_entity(schedule_bypass_entity)
-
-    async def async_service_boost(self, duration: int, temperature: float | None = None, temperature_offset: float | None = None) -> None:
-        """Handle boost service call."""
-        if (temperature is None) == (temperature_offset is None):
-            raise ServiceValidationError("Exactly one of 'temperature' or 'temperature_offset' must be provided.")
-        if temperature is None:
-            current = self.shared_target_state.temperature
-            if current is None:
-                raise ServiceValidationError("Cannot use 'temperature_offset': group has no current target temperature.")
-            temperature = current + temperature_offset  # type: ignore[operator]
-        await self.boost_override_manager.activate(temperature=temperature, duration=duration * 60)
-
-    async def async_service_apply_config(
-        self,
-        settings: str,
-        include_member_list: bool = False,
-        include_entity_selectors: bool = False,
-    ) -> None:
-        """Handle apply_config service call."""
-        if self.entry is None:
-            _LOGGER.warning("[%s] apply_config: entry is None, skipping", self.entity_id)
-            return
-        try:
-            new_settings = json.loads(settings)
-        except json.JSONDecodeError as err:
-            raise ServiceValidationError(f"Invalid JSON settings: {err}") from err
-
-        if not isinstance(new_settings, dict):
-            raise ServiceValidationError("Settings must be a JSON object.")
-
-        # Whitelist filter: only valid keys pass
-        filtered = {
-            key: value
-            for key, value in new_settings.items()
-            if key in VALID_CONFIG_KEYS
-        }
-
-        # Protection: always remove identity keys
-        for key in IDENTITY_KEYS:
-            filtered.pop(key, None)
-
-        # Optional: remove non-portable keys if not requested
-        if not include_member_list:
-            for key in MEMBER_LIST_KEYS:
-                filtered.pop(key, None)
-
-        if not include_entity_selectors:
-            for key in ENTITY_SELECTOR_KEYS:
-                filtered.pop(key, None)
-
-        if not filtered:
-            _LOGGER.info("[%s] No valid settings to apply after filtering", self.entity_id)
-            return
-
-        # Merge with existing options
-        merged_options = {**self.entry.options, **filtered}
-
-        _LOGGER.info("[%s] Applying new configuration via service call (reloading...)", self.entity_id)
-        self.hass.config_entries.async_update_entry(self.entry, options=merged_options)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Handle removal."""
-        await super().async_will_remove_from_hass()
-        self._cancel_grace_period_timer()
-        await self.climate_call_handler.async_cancel_all()
-        await self.override_call_handler.async_cancel_all()
-        await self.presence_call_handler.async_cancel_all()
-        await self.schedule_call_handler.async_cancel_all()
-        await self.switch_call_handler.async_cancel_all()
-        await self.switch_enforce_call_handler.async_cancel_all()
-        await self.sync_mode_call_handler.async_cancel_all()
-        await self.window_control_call_handler.async_cancel_all()
-        self.sync_mode_handler.async_teardown()
-
-        if self.advanced_mode:
-            self.calibration_handler.async_teardown()
-            self.member_isolation_handler.async_teardown()
-            self.override_handler.async_teardown()
-            self.presence_handler.async_teardown()
-            self.schedule_handler.async_teardown()
-            self.schedule_bypass_handler.async_teardown()
-            self.window_control_handler.async_teardown()
-
-    def _restore_state(self, last_state: State) -> None:
-        """Restore state from last known state."""
-        last_attrs = last_state.attributes
-
-        # Restore group offset first to ensure it's available for TargetState restoration
-        if (last_offset := last_attrs.get(ATTR_GROUP_OFFSET)) is not None:
-            try:
-                self.run_state = replace(self.run_state, group_offset=float(last_offset))
-            except (TypeError, ValueError):
-                pass
-
-        # We filter for ClimateState fields to ensure we only store relevant climate attributes
-        restored_data = {}
-        valid_hvac_modes = {m.value for m in HVACMode}
-        for field in fields(ClimateState):
-            key = field.name
-            if key == "hvac_mode":
-                if last_state.state in valid_hvac_modes:
-                    restored_data[key] = last_state.state
-            elif (value := last_attrs.get(key)) is not None:
-                restored_data[key] = value
-
-        if restored_data:
-            self.shared_target_state = self.shared_target_state.update(**restored_data)
-            _LOGGER.debug("[%s] Restored Persistent Target State (offset corrected): %s", self.entity_id, self.shared_target_state)
-
-        # Restore modes and features
-        if last_state.state in valid_hvac_modes:
-            self._attr_hvac_mode = HVACMode(last_state.state)
-            self._attr_available = True
-            self._attr_assumed_state = True
-        if ATTR_HVAC_ACTION in last_attrs:
-            self._attr_hvac_action = last_attrs[ATTR_HVAC_ACTION]
-        if (modes := last_attrs.get(ATTR_HVAC_MODES)):
-            self._attr_hvac_modes = self._sort_hvac_modes(modes)
-        if ATTR_FAN_MODES in last_attrs:
-            self._attr_fan_modes = last_attrs[ATTR_FAN_MODES]
-        if ATTR_PRESET_MODES in last_attrs:
-            self._attr_preset_modes = last_attrs[ATTR_PRESET_MODES]
-        if ATTR_SWING_MODES in last_attrs:
-            self._attr_swing_modes = last_attrs[ATTR_SWING_MODES]
-        if ATTR_SWING_HORIZONTAL_MODES in last_attrs:
-            self._attr_swing_horizontal_modes = last_attrs[ATTR_SWING_HORIZONTAL_MODES]
-        if ATTR_SUPPORTED_FEATURES in last_attrs:
-            self._attr_supported_features = last_attrs[ATTR_SUPPORTED_FEATURES] & SUPPORTED_FEATURES
-
-        # Restore temperature and humidity values
-        self._attr_target_temperature = last_attrs.get(ATTR_TEMPERATURE)
-        self._attr_target_temperature_low = last_attrs.get(ATTR_TARGET_TEMP_LOW)
-        self._attr_target_temperature_high = last_attrs.get(ATTR_TARGET_TEMP_HIGH)
-        self._attr_target_temperature_step = last_attrs.get(ATTR_TARGET_TEMP_STEP)
-        self._attr_target_humidity = last_attrs.get(ATTR_HUMIDITY)
-        self._attr_current_temperature = last_attrs.get(ATTR_CURRENT_TEMPERATURE)
-        self._attr_current_humidity = last_attrs.get(ATTR_CURRENT_HUMIDITY)
-        self._attr_min_temp = last_attrs.get(ATTR_MIN_TEMP, DEFAULT_MIN_TEMP)
-        self._attr_max_temp = last_attrs.get(ATTR_MAX_TEMP, DEFAULT_MAX_TEMP)
-        self._attr_min_humidity = last_attrs.get(ATTR_MIN_HUMIDITY, DEFAULT_MIN_HUMIDITY)
-        self._attr_max_humidity = last_attrs.get(ATTR_MAX_HUMIDITY, DEFAULT_MAX_HUMIDITY)
-
-        # Restore persisted active schedule entity
-        if (
-            self.config.get(CONF_PERSIST_ACTIVE_SCHEDULE)
-            and (restored_schedule := last_attrs.get(ATTR_ACTIVE_SCHEDULE_ENTITY))
-        ):
-            self.schedule_handler._schedule_entity = restored_schedule
-            _LOGGER.debug("[%s] Restored active schedule entity: %s", self.entity_id, restored_schedule)
-
-        # Restore last active HVAC mode
-        if (last_active := last_attrs.get(ATTR_LAST_ACTIVE_HVAC_MODE)) is not None:
-            self.run_state = replace(self.run_state, last_active_hvac_mode=last_active)
-
-    def _reduce_attributes(self, attributes: list[Any], default: Any = None) -> list[Any] | int:
-        """Reduce a list of attributes (modes or features) based on the feature strategy."""
-        if not attributes:
-            return default if default is not None else []
-
-        # Handle list of features [ClimateEntityFeature | int]
-        if isinstance(attributes[0], (ClimateEntityFeature, int)):
-            # Intersection (common features)
-            if self._feature_strategy == FeatureStrategy.INTERSECTION:
-                return reduce(lambda x, y: x & y, attributes)  # type: ignore[no-any-return]
-            # Union (all features)
-            return reduce(lambda x, y: x | y, attributes)  # type: ignore[no-any-return]
-
-        # Handle list of modes [HVACMode | str]
-        # Filter out empty attributes or None
-        valid_attributes = [attr for attr in attributes if attr]
-        if not valid_attributes:
-            return []
-
-        # Intersection (common modes)
-        if self._feature_strategy == FeatureStrategy.INTERSECTION:
-            modes = list(reduce(lambda x, y: set(x) & set(y), valid_attributes))
-        # Union (all modes)
-        else:
-            modes = list(reduce(lambda x, y: set(x) | set(y), valid_attributes))
-
-        return modes
-
-    def _start_grace_period_timer(self, remaining: float) -> None:
-        """(Re-)start the one-shot timer that forces a state refresh when the grace period expires.
-
-        Always replaces an existing timer so that a new UI command correctly extends
-        the window to _grace_period seconds from the latest change.
-        """
-        if self._grace_period_unsub is not None:
-            self._grace_period_unsub()
-
-        @callback
-        def _grace_period_expired(_now: Any) -> None:
-            self._grace_period_unsub = None
-            self._grace_period_last_ts = None
-            _LOGGER.debug("[%s] Grace period expired, forcing state refresh", self.entity_id)
-            self.async_defer_or_update_ha_state()
-
-        _LOGGER.debug("[%s] Grace period started, refresh in %.1f seconds", self.entity_id, remaining)
-        self._grace_period_unsub = async_call_later(self.hass, remaining, _grace_period_expired)
-
-    def _cancel_grace_period_timer(self) -> None:
-        """Cancel a pending grace period timer, if any."""
-        if self._grace_period_unsub is not None:
-            self._grace_period_unsub()
-            self._grace_period_unsub = None
-        self._grace_period_last_ts = None
-
-    def _get_optimistic_value(self, attr: str) -> Any:
-        """Return the target state value while the UI grace period is active, else None.
-
-        Shows the commanded value instead of the live member average for up to
-        _grace_period seconds after a direct UI command, preventing flicker while
-        slow devices echo their old state back.
-        """
-        if self._grace_period <= 0:
-            return None
-
-        timestamp = self.shared_target_state.last_timestamp or 0
-        elapsed = time.time() - timestamp
-
-        if self.shared_target_state.last_source == "ui" and elapsed < self._grace_period:
-            if timestamp != self._grace_period_last_ts:
-                self._grace_period_last_ts = timestamp
-                self._start_grace_period_timer(self._grace_period - elapsed)
-            return getattr(self.shared_target_state, attr, None)
-
-        self._cancel_grace_period_timer()
-        return None
-
-    def _sort_hvac_modes(self, modes: list[Any]) -> list[HVACMode]:
-        """Sort HVAC modes based on a predefined order."""
-
-        # Make sure OFF is always included
-        all_modes = set(modes) | {HVACMode.OFF}
-
-        # Return modes sorted in the order of the HVACMode enum
-        return [m for m in HVACMode if m in all_modes]
-
-    def _determine_hvac_mode(self, current_hvac_modes: list[str]) -> HVACMode | None:
-        """Determine the group's HVAC mode based on member modes and strategy."""
-
-        if (val := self._get_optimistic_value("hvac_mode")) is not None:
-            return HVACMode(val)
-
-        active_hvac_modes = [mode for mode in current_hvac_modes if mode != HVACMode.OFF]
-
-        most_common_active_hvac_mode: HVACMode | None = None
-        if active_hvac_modes:
-            most_common_active_hvac_mode = HVACMode(max(active_hvac_modes, key=active_hvac_modes.count))
-
-        strategy = self._hvac_mode_strategy
-
-        # Auto strategy
-        if strategy == HvacModeStrategy.AUTO:
-            # If target HVAC mode is OFF or None, use normal strategy
-            if self.shared_target_state.hvac_mode in (HVACMode.OFF, None):
-                strategy = HvacModeStrategy.NORMAL
-            # If target HVAC mode is ON (e.g. heat, cool), use off priority strategy
-            else:
-                strategy = HvacModeStrategy.OFF_PRIORITY
-
-        # Normal strategy
-        if strategy == HvacModeStrategy.NORMAL:
-            # If all members are OFF, the group is OFF
-            if all(mode == HVACMode.OFF for mode in current_hvac_modes) if current_hvac_modes else False:
-                return HVACMode.OFF
-            # Otherwise, return the most common active HVAC mode
-            return most_common_active_hvac_mode
-
-        # Off priority strategy
-        if strategy == HvacModeStrategy.OFF_PRIORITY:
-            # If any member is OFF, the group is OFF
-            if HVACMode.OFF in current_hvac_modes:
-                return HVACMode.OFF
-            # Otherwise, return the most common active HVAC mode
-            return most_common_active_hvac_mode
-
-        # Default to OFF if no other mode is determined
-        return HVACMode.OFF
-
-    def _determine_hvac_action(self, current_hvac_actions: list[HVACAction | None]) -> HVACAction | None:
-        """Determine the group's HVAC action based on member actions and a priority."""
-
-        # 1. Priority: Active states (heating, cooling, etc.)
-        active_hvac_actions = [
-            action
-            for action in current_hvac_actions
-            if action not in (HVACAction.OFF, HVACAction.IDLE, None)
-        ]
-        if active_hvac_actions:
-            # Set hvac_action to the most common active HVAC action
-            return max(active_hvac_actions, key=active_hvac_actions.count)
-        # 2. Priority: Idle state
-        if HVACAction.IDLE in current_hvac_actions:
-            return HVACAction.IDLE
-        # 3. Priority: Off state
-        if HVACAction.OFF in current_hvac_actions:
+    def hvac_mode(self) -> HVACMode:
+        return HVACMode.OFF if self.coordinator.mode == MODE_OFF else HVACMode.HEAT
+
+    @property
+    def hvac_action(self) -> HVACAction:
+        if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        # 4. Fallback
-        return None
+        return HVACAction.HEATING if self.coordinator.heat_required else HVACAction.IDLE
 
-    @staticmethod
-    def within_tolerance(val1: Any, val2: Any, tolerance: float = FLOAT_TOLERANCE) -> bool:
-        """Check if two values are within a given tolerance."""
-        try:
-            return abs(float(val1) - float(val2)) < tolerance
-        except (ValueError, TypeError):
-            return False
+    @property
+    def preset_modes(self) -> list[str]:
+        return _PRESETS
 
-    @staticmethod
-    def mean_round(value: float | None, round_option: RoundOption = RoundOption.NONE) -> float | None:
-        """Round the decimal part of a float to an fractional value with a certain precision."""
+    @property
+    def preset_mode(self) -> str | None:
+        m = self.coordinator.mode
+        return None if m == MODE_OFF else m
 
-        if value is None:
-            return None
+    @property
+    def current_temperature(self) -> float | None:
+        return self.coordinator.current_temperature
 
-        if round_option == RoundOption.HALF:
-            return round(value * 2) / 2
-        if round_option == RoundOption.INTEGER:
-            return round(value)
-        return value
+    @property
+    def target_temperature(self) -> float | None:
+        return self.coordinator.setpoint
 
-    def read_member_state(self, entity_id: str) -> State | None:
-        """Central member-state read — the only path that applies Member Templates.
-
-        All code that needs a member's state must go through this method; direct
-        `hass.states.get(member_id)` calls bypass any active template and
-        produce inconsistent behaviour. Returns the real state untouched when
-        no template applies (template disabled, entity not covered, or the
-        group is not in the relevant mode). See `member_template.py` for the
-        manipulation logic.
-        """
-        state = self.hass.states.get(entity_id)
-        if state is None or self.range_template is None:
-            return state
-        return _apply_range_template(self, entity_id, state)
-
-    def read_member_event(self, event: Event) -> tuple[State | None, State | None]:
-        """Unpack a `state_changed` event into template-rendered `(new_state, old_state)`.
-
-        Called once at the source in `_state_change_listener` so every downstream
-        consumer (`ChangeState.from_event`, `SyncModeHandler._has_relevant_changes`)
-        sees a rendered event without having to call a gateway itself.
-        """
-        entity_id = event.data.get("entity_id")
-        new_state = event.data.get("new_state")
-        old_state = event.data.get("old_state")
-        if self.range_template is None or entity_id is None:
-            return new_state, old_state
-        new_wrapped = _apply_range_template(self, entity_id, new_state) if new_state else None
-        old_wrapped = _apply_range_template(self, entity_id, old_state) if old_state else None
-        return new_wrapped, old_wrapped
-
-    def _get_valid_member_states(self, entity_ids: list[str]) -> tuple[list[State], bool]:
-        """Get valid states for provided entities.
-
-        Excludes isolated members (e.g. curtain closed) from all calculations.
-        Returns:
-            Tuple of (valid_states, all_ready) where all_ready is True when
-            all entity_ids have a valid (not unavailable/unknown) state.
-        """
-        excluded = self.run_state.isolated_members
-        expected_entity_ids = [entity_id for entity_id in entity_ids if entity_id not in excluded]
-
-        all_states = [
-            state
-            for entity_id in expected_entity_ids
-            if (state := self.read_member_state(entity_id)) is not None
-        ]
-        valid_states = [state for state in all_states if state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)]
-        all_ready = len(valid_states) == len(expected_entity_ids) if expected_entity_ids else True
-        return valid_states, all_ready
-
-    def _get_avg_sensor_value(self, sensor_ids: list[str], calc_func: Callable[[list[float]], float]) -> float | None:
-        """Calculate average value from multiple sensors."""
-        if not sensor_ids:
-            return None
-
-        valid_states, _ = self._get_valid_member_states(sensor_ids)
-        values = []
-        for state in valid_states:
-            try:
-                values.append(float(state.state))
-            except (ValueError, TypeError):
-                pass
-
-        if values:
-            return calc_func(values)
-        return None
-
-    @callback
-    def _state_change_listener(self, event: Event | None = None) -> None:
-        """Handle a member `state_changed` event.
-
-        For active Member Templates (e.g. Range Template), the event is
-        reconstructed at the source with rendered `new_state`/`old_state` so
-        all downstream consumers (`ChangeState.from_event`, `SyncModeHandler`,
-        …) see a template-rendered event transparently. HA's `Event` is
-        frozen, so a new object is built preserving `context`, `origin`, and
-        `time_fired_timestamp` — losing any of these would break echo
-        suppression and origin analysis.
-        """
-        if event is not None:
-            new_wrapped, old_wrapped = self.read_member_event(event)
-            event = Event(
-                event_type=event.event_type,
-                data={
-                    **event.data,
-                    "new_state": new_wrapped,
-                    "old_state": old_wrapped,
-                },
-                origin=event.origin,
-                time_fired_timestamp=event.time_fired_timestamp,
-                context=event.context,
-            )
-        self.event = event
-        self.async_defer_or_update_ha_state()
-
-    @callback
-    def async_update_group_state(self) -> None:
-        """Query all members and determine the climate group state."""
-
-        # Check if there are any valid states
-        self.states, all_members_ready = self._get_valid_member_states(self.climate_entity_ids)
-
-        # Set startup time if all members are ready
-        if not self.run_state.startup_time and all_members_ready:
-            self.run_state = replace(self.run_state, startup_time=time.time())
-            if self.advanced_mode:
-                self.hass.async_create_task(self.schedule_handler.schedule_listener(caller=ScheduleCaller.RESYNC))
-                self.calibration_handler.update("temperature", force_sync=True)
-                self.calibration_handler.update("humidity", force_sync=True)
-            _LOGGER.debug("[%s] All members ready the first time.", self.entity_id)
-
-        # No states available
-        if not self.states:
-            self._attr_hvac_mode = None
-            self._attr_available = False
-            return
-
-        # Load master entity state
-        if self._master_entity_id:
-            raw = self.read_member_state(self._master_entity_id)
-            if raw and raw.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                self.master_state = raw
-                self.current_master_state = CurrentState(
-                    hvac_mode=raw.state,
-                    temperature=raw.attributes.get(ATTR_TEMPERATURE),
-                    target_temp_low=raw.attributes.get(ATTR_TARGET_TEMP_LOW),
-                    target_temp_high=raw.attributes.get(ATTR_TARGET_TEMP_HIGH),
-                    humidity=raw.attributes.get(ATTR_HUMIDITY),
-                )
-            else:
-                self.master_state = None
-                self.current_master_state = CurrentState()
-
-        # Dynamic Master Fallback: pause MASTER_LOCK when master is unavailable
-        new_fallback = (
-            self._master_entity_id is not None
-            and self.master_state is None
-            and self.sync_mode_handler.sync_mode == SyncMode.MASTER_LOCK
-        )
-        if new_fallback != self.run_state.master_fallback_active:
-            self.run_state = replace(self.run_state, master_fallback_active=new_fallback)
-            _LOGGER.warning(
-                "[%s] Master entity unavailable — fallback to member average active: %s",
-                self.entity_id, new_fallback,
-            )
-
-        # Calculate and store ChangeState
-        if self.event:
-            self.change_state = ChangeState.from_event(
-                self.event,
-                self.shared_target_state,
-                offset_map=self._temp_offset_map or None,
-            )
-            self._event_entity_id = self.event.data.get(ATTR_ENTITY_ID)
-
-            # Check if the change state is from a member entity
-            if self.change_state and self.change_state.entity_id in self.climate_entity_ids:
-                self.sync_mode_handler.resync()
-
-        # All available HVAC modes --> list of HVACMode (str), e.g. [<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.AUTO: 'auto'>, ...]
-        hvac_modes = self._reduce_attributes(list(find_state_attributes(self.states, ATTR_HVAC_MODES)))
-        self._attr_hvac_modes = self._sort_hvac_modes(hvac_modes if isinstance(hvac_modes, list) else [])
-
-        # A list of all HVAC modes that are currently set
-        self._current_hvac_modes = [state.state for state in self.states]
-
-        # Determine the group's HVAC mode and update the attribute
-        self._attr_hvac_mode = self._determine_hvac_mode(self._current_hvac_modes)
-
-        # Update last active HVAC mode
-        if self._attr_hvac_mode is not None and self._attr_hvac_mode not in (HVACMode.OFF, self.run_state.last_active_hvac_mode):
-            self.run_state = replace(self.run_state, last_active_hvac_mode=self._attr_hvac_mode)
-
-        # The group is available if any member is available
-        self._attr_available = True
-
-        # The group state is assumed if not all states are equal
-        self._attr_assumed_state = not states_equal(self.states)
-
-        # Determine HVAC action
-        current_hvac_actions = list(find_state_attributes(self.states, ATTR_HVAC_ACTION))
-        self._attr_hvac_action = self._determine_hvac_action(current_hvac_actions)
-
-        # Get temperature unit from system settings
-        self._attr_temperature_unit = self.hass.config.units.temperature_unit
-
-        self._update_temperature_attributes()
-        self._update_humidity_attributes()
-        self._update_mode_attributes()
-
-        # Populate current_group_state
-        self.current_group_state = CurrentState(
-            hvac_mode=self._attr_hvac_mode,
-            temperature=self._attr_target_temperature,
-            target_temp_low=self._attr_target_temperature_low,
-            target_temp_high=self._attr_target_temperature_high,
-            humidity=self._attr_target_humidity,
-            preset_mode=self._attr_preset_mode,
-            fan_mode=self._attr_fan_mode,
-            swing_mode=self._attr_swing_mode,
-            swing_horizontal_mode=self._attr_swing_horizontal_mode
-        )
-
-        # Cold Start: Populate target store from current group state if empty.
-        if self.shared_target_state == TargetState():
-            initial_data = self.current_group_state.to_dict()
-            if initial_data:
-                self.shared_target_state = self.shared_target_state.update(**initial_data)
-                _LOGGER.debug("[%s] Initialized Persistent Target State from current values: %s", self.entity_id, self.shared_target_state)
-
-        # Clear instance-level event state after use — all three are persisted across
-        # calls, so stale values would cause spurious resync() or calibration triggers.
-        self.change_state = None
-        self.event = None
-        self._event_entity_id = None
-
-    def _resolve_master_or_avg(self, use_master: bool, master_value: float | None, attr: str, avg_calc: Callable[[Any], float | None], states: list[State]) -> float | None:
-        """Return the display value for a temperature or humidity attribute.
-
-        Priority: master entity → offset-corrected average → raw member average.
-        `states` is provided by the caller — either the full self.states or a pre-filtered
-        subset (e.g. without OFF members). Offset correction subtracts each member's
-        per-device offset before averaging so the group shows the logical set point.
-        """
-        if use_master and self._master_entity_id and master_value is not None:
-            return master_value
-
-        if (
-            self._temp_offset_map
-            and self._member_offset_correction
-            and attr in (ATTR_TEMPERATURE, ATTR_TARGET_TEMP_LOW, ATTR_TARGET_TEMP_HIGH)
-        ):
-            values = [
-                val - self._temp_offset_map.get(s.entity_id, 0.0)
-                for s in states
-                if (val := s.attributes.get(attr)) is not None
-            ]
-            return avg_calc(values) if values else None
-
-        return reduce_attribute(states, attr, reduce=lambda *data: avg_calc(data))  # type: ignore[no-any-return]
-
-    def _update_temperature_attributes(self) -> None:
-        """Calculate and set all temperature-related attributes.
-
-        temp_states excludes OFF members when CONF_IGNORE_OFF_MEMBERS_TEMPERATURE is set.
-        min_temp, max_temp, and temp_step always use self.states — device capability limits
-        must reflect the full group regardless of which members are currently active.
-        """
-        temp_states = (
-            [s for s in self.states if s.state != HVACMode.OFF]
-            if self._ignore_off_members_temperature
-            else self.states
-        )
-
-        # Current temperature
-        self._member_temp_avg = reduce_attribute(
-            temp_states, ATTR_CURRENT_TEMPERATURE, reduce=lambda *data: self._temp_current_avg_calc(data)
-        )
-        if self.temp_sensor_entity_ids:  # always empty in simple mode
-            self._attr_current_temperature = self._get_avg_sensor_value(self.temp_sensor_entity_ids, self._temp_current_avg_calc)
-            if self._attr_current_temperature is not None:
-                self.calibration_handler.update("temperature", self._event_entity_id)
-            else:
-                _LOGGER.debug("[%s] External temp sensors unavailable.", self.entity_id)
-        else:
-            self._attr_current_temperature = self._member_temp_avg
-
-        # Target temperatures: grace period → master override → offset-corrected member average
-        master = self.current_master_state
-        val = self._get_optimistic_value("temperature")
-        self._attr_target_temperature = val if val is not None else self._resolve_master_or_avg(
-            self._temp_use_master, master.temperature, ATTR_TEMPERATURE, self._temp_target_avg_calc, temp_states
-        )
-        val = self._get_optimistic_value("target_temp_low")
-        self._attr_target_temperature_low = val if val is not None else self._resolve_master_or_avg(
-            self._temp_use_master, master.target_temp_low, ATTR_TARGET_TEMP_LOW, self._temp_target_avg_calc, temp_states
-        )
-        val = self._get_optimistic_value("target_temp_high")
-        self._attr_target_temperature_high = val if val is not None else self._resolve_master_or_avg(
-            self._temp_use_master, master.target_temp_high, ATTR_TARGET_TEMP_HIGH, self._temp_target_avg_calc, temp_states
-        )
-
-        # Round target values
-        for attr in ("_attr_target_temperature", "_attr_target_temperature_low", "_attr_target_temperature_high"):
-            val = getattr(self, attr)
-            if val is not None:
-                setattr(self, attr, self.mean_round(val, self._temp_round))
-
-        # Temperature limits and step
-        self._attr_target_temperature_step = reduce_attribute(self.states, ATTR_TARGET_TEMP_STEP, reduce=max)
-        if self._feature_strategy == FeatureStrategy.UNION:
-            # Union: widest range — lowest min, highest max
-            self._attr_min_temp = reduce_attribute(self.states, ATTR_MIN_TEMP, reduce=min, default=DEFAULT_MIN_TEMP)
-            self._attr_max_temp = reduce_attribute(self.states, ATTR_MAX_TEMP, reduce=max, default=DEFAULT_MAX_TEMP)
-        else:
-            # Intersection (default): narrowest range — highest min, lowest max
-            self._attr_min_temp = reduce_attribute(self.states, ATTR_MIN_TEMP, reduce=max, default=DEFAULT_MIN_TEMP)
-            self._attr_max_temp = reduce_attribute(self.states, ATTR_MAX_TEMP, reduce=min, default=DEFAULT_MAX_TEMP)
-
-    def _update_humidity_attributes(self) -> None:
-        """Calculate and set all humidity-related attributes."""
-        # Current humidity
-        if self.humidity_sensor_entity_ids:  # always empty in simple mode
-            self._attr_current_humidity = self._get_avg_sensor_value(
-                self.humidity_sensor_entity_ids, self._humidity_current_avg_calc
-            )
-            if self._attr_current_humidity is not None:
-                self.calibration_handler.update("humidity", self._event_entity_id)
-            else:
-                _LOGGER.debug("[%s] External humidity sensors unavailable.", self.entity_id)
-        else:
-            self._attr_current_humidity = reduce_attribute(
-                self.states, ATTR_CURRENT_HUMIDITY, reduce=lambda *data: self._humidity_current_avg_calc(data)
-            )
-
-        # Target humidity: grace period → master override → member average
-        val = self._get_optimistic_value("humidity")
-        self._attr_target_humidity = val if val is not None else self._resolve_master_or_avg(
-            self._humidity_use_master, self.current_master_state.humidity, ATTR_HUMIDITY, self._humidity_target_avg_calc, self.states
-        )
-        if self._attr_target_humidity is not None:
-            self._attr_target_humidity = self.mean_round(self._attr_target_humidity, self._humidity_round)
-
-        # Humidity limits
-        self._attr_min_humidity = reduce_attribute(self.states, ATTR_MIN_HUMIDITY, reduce=max, default=DEFAULT_MIN_HUMIDITY)
-        self._attr_max_humidity = reduce_attribute(self.states, ATTR_MAX_HUMIDITY, reduce=min, default=DEFAULT_MAX_HUMIDITY)
-
-    def _update_mode_attributes(self) -> None:
-        """Calculate and set fan, preset, swing modes and supported features."""
-        fan_modes = self._reduce_attributes(list(find_state_attributes(self.states, ATTR_FAN_MODES)))
-        self._attr_fan_modes = sorted(fan_modes) if isinstance(fan_modes, list) else []
-        val = self._get_optimistic_value("fan_mode")
-        self._attr_fan_mode = val if val is not None else most_frequent_attribute(self.states, ATTR_FAN_MODE)
-
-        preset_modes = self._reduce_attributes(list(find_state_attributes(self.states, ATTR_PRESET_MODES)))
-        self._attr_preset_modes = sorted(preset_modes) if isinstance(preset_modes, list) else []
-        val = self._get_optimistic_value("preset_mode")
-        self._attr_preset_mode = val if val is not None else most_frequent_attribute(self.states, ATTR_PRESET_MODE)
-
-        swing_modes = self._reduce_attributes(list(find_state_attributes(self.states, ATTR_SWING_MODES)))
-        self._attr_swing_modes = sorted(swing_modes) if isinstance(swing_modes, list) else []
-        val = self._get_optimistic_value("swing_mode")
-        self._attr_swing_mode = val if val is not None else most_frequent_attribute(self.states, ATTR_SWING_MODE)
-
-        swing_horizontal_modes = self._reduce_attributes(list(find_state_attributes(self.states, ATTR_SWING_HORIZONTAL_MODES)))
-        self._attr_swing_horizontal_modes = sorted(swing_horizontal_modes) if isinstance(swing_horizontal_modes, list) else []
-        val = self._get_optimistic_value("swing_horizontal_mode")
-        self._attr_swing_horizontal_mode = val if val is not None else most_frequent_attribute(self.states, ATTR_SWING_HORIZONTAL_MODE)
-
-        # Supported features
-        attr_supported_features = self._reduce_attributes(list(find_state_attributes(self.states, ATTR_SUPPORTED_FEATURES)), default=0)
-        features = attr_supported_features if isinstance(attr_supported_features, int) else 0
-        self._attr_supported_features = (features | DEFAULT_SUPPORTED_FEATURES) & SUPPORTED_FEATURES
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs: dict = {
+            "members":              self.coordinator.member_entity_ids,
+            "member_count":         len(self.coordinator.member_entity_ids),
+            "member_temperatures":  self.coordinator.member_temperatures,
+            "heat_required":        self.coordinator.heat_required,
+            "mode":                 self.coordinator.mode,
+            "schedule":             self.coordinator.schedule_slots,
+            "schedule_current_slot": self.coordinator.schedule_current_slot,
+        }
+        if self.coordinator.mode == MODE_BOOST:
+            attrs["boost_ends"]              = self.coordinator.boost_end_time
+            attrs["boost_remaining_minutes"] = self.coordinator.boost_remaining_minutes
+        return {k: v for k, v in attrs.items() if v is not None}
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Forward the set_hvac_mode command to all climate in the climate group."""
-        self.climate_state_manager.update(hvac_mode=hvac_mode)
-        await self.climate_call_handler.call_debounced(data={ATTR_HVAC_MODE: hvac_mode})
-
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Forward the set_temperature command to all climate in the climate group."""
-        self.climate_state_manager.update(**kwargs)
-        await self.climate_call_handler.call_debounced(data=kwargs)
-
-    async def async_set_humidity(self, humidity: int) -> None:
-        """Set new target humidity."""
-        self.climate_state_manager.update(humidity=humidity)
-        await self.climate_call_handler.call_debounced(data={ATTR_HUMIDITY: humidity})
-
-    async def async_set_fan_mode(self, fan_mode: str) -> None:
-        """Forward the set_fan_mode to all climate in the climate group."""
-        self.climate_state_manager.update(fan_mode=fan_mode)
-        await self.climate_call_handler.call_debounced(data={ATTR_FAN_MODE: fan_mode})
+        await self.coordinator.async_set_mode(
+            MODE_OFF if hvac_mode == HVACMode.OFF else MODE_MANUAL
+        )
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Forward the set_preset_mode to all climate in the climate group."""
-        self.climate_state_manager.update(preset_mode=preset_mode)
-        await self.climate_call_handler.call_debounced(data={ATTR_PRESET_MODE: preset_mode})
+        await self.coordinator.async_set_mode(preset_mode)
 
-    async def async_set_swing_mode(self, swing_mode: str) -> None:
-        """Forward the set_swing_mode to all climate in the climate group."""
-        self.climate_state_manager.update(swing_mode=swing_mode)
-        await self.climate_call_handler.call_debounced(data={ATTR_SWING_MODE: swing_mode})
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        if (t := kwargs.get(ATTR_TEMPERATURE)) is not None:
+            await self.coordinator.async_set_temperature(float(t))
 
-    async def async_set_swing_horizontal_mode(self, swing_horizontal_mode: str) -> None:
-        """Set new target horizontal swing operation."""
-        self.climate_state_manager.update(swing_horizontal_mode=swing_horizontal_mode)
-        await self.climate_call_handler.call_debounced(data={ATTR_SWING_HORIZONTAL_MODE: swing_horizontal_mode})
-
-    async def async_turn_on(self) -> None:
-        """Forward the turn_on command to all climate in the climate group."""
-
-        # Set to the last active HVAC mode if available
-        if self.run_state.last_active_hvac_mode is not None:
-            _LOGGER.debug("[%s] Turn on with the last active HVAC mode: %s", self.entity_id, self.run_state.last_active_hvac_mode)
-            await self.async_set_hvac_mode(HVACMode(self.run_state.last_active_hvac_mode))
-
-        # Try to set the first available HVAC mode
-        elif self._attr_hvac_modes:
-            for mode in self._attr_hvac_modes:
-                if mode != HVACMode.OFF:
-                    _LOGGER.debug("[%s] Turn on with first available HVAC mode: %s", self.entity_id, mode)
-                    await self.async_set_hvac_mode(mode)
-                    break
-
-        # No HVAC modes available
-        else:
-            _LOGGER.debug("[%s] Can't turn on: No HVAC modes available", self.entity_id)
+    async def async_turn_on(self)  -> None:
+        await self.coordinator.async_set_mode(MODE_MANUAL)
 
     async def async_turn_off(self) -> None:
-        """Forward the turn_off command to all climate in the climate group."""
-
-        # Only turn off if HVACMode.OFF is supported
-        if HVACMode.OFF in self._attr_hvac_modes:
-            _LOGGER.debug("[%s] Turn off with HVAC mode 'off'", self.entity_id)
-            await self.async_set_hvac_mode(HVACMode.OFF)
-
-        # HVACMode.OFF not supported
-        else:
-            _LOGGER.debug("[%s] Can't turn off: HVAC mode 'off' not available", self.entity_id)
-
-    async def async_toggle(self) -> None:
-        """Toggle the entity."""
-
-        if self._attr_hvac_mode == HVACMode.OFF:
-            await self.async_turn_on()
-        else:
-            await self.async_turn_off()
+        await self.coordinator.async_set_mode(MODE_OFF)
