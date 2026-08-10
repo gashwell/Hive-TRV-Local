@@ -41,6 +41,13 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = CONFIG_VERSION_DEVICE
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._trv_topic: str = ""
+        self._trv_name:  str = ""
+        self._recv_topic: str = ""
+        self._recv_name:  str = ""
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
@@ -58,35 +65,123 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_add_trv(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
+        """Step 1 — browse and select a Z2M climate entity or enter topic manually."""
         errors: dict = {}
+
+        # Build list of already-registered TRV topics so we can exclude them
+        already_registered: set[str] = set()
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_TRV:
+                already_registered.add(entry.data.get(CONF_MQTT_TOPIC, ""))
+
+        # Discover Z2M MQTT climate entities from the entity registry
+        from homeassistant.helpers import entity_registry as er, device_registry as dr
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+
+        # Build options: {topic: "Friendly Name (topic)"}
+        # Z2M sets unique_id = topic for its climate entities
+        z2m_options: dict[str, str] = {}
+        for entry in ent_reg.entities.values():
+            if entry.entity_id.split(".")[0] != "climate":
+                continue
+            if entry.platform != "mqtt":
+                continue
+            uid = entry.unique_id or ""
+            # Exclude our own group entities
+            if uid.startswith("room_") and uid.endswith("_climate"):
+                continue
+            # uid is typically the Z2M topic e.g. "zigbee2mqtt/Living Room TRV"
+            topic = uid
+            if topic in already_registered:
+                continue
+            # Get friendly name from entity or device
+            friendly = entry.name or entry.original_name or ""
+            if not friendly and entry.device_id:
+                dev = dev_reg.async_get(entry.device_id)
+                friendly = (dev.name_by_user or dev.name or "") if dev else ""
+            label = f"{friendly} ({topic})" if friendly else topic
+            z2m_options[topic] = label
+
         if user_input is not None:
-            topic = user_input[CONF_MQTT_TOPIC].strip()
-            name  = user_input[CONF_DEVICE_NAME].strip()
+            selected = user_input.get("z2m_entity", "").strip()
+            manual   = user_input.get(CONF_MQTT_TOPIC, "").strip()
+            topic    = selected or manual
             if not topic:
-                errors[CONF_MQTT_TOPIC] = "required"
-            elif not name:
+                errors["z2m_entity"] = "required"
+            else:
+                # Store topic and move to name confirmation step
+                self._trv_topic = topic
+                # Pre-fill name from the options dict if available
+                self._trv_name  = z2m_options.get(topic, "").split(" (")[0] or topic.split("/")[-1]
+                return await self.async_step_add_trv_confirm()
+
+        schema: dict = {}
+        if z2m_options:
+            schema[vol.Optional("z2m_entity")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=k, label=v)
+                        for k, v in sorted(z2m_options.items(), key=lambda x: x[1])
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        # Always show manual entry as fallback
+        schema[vol.Optional(CONF_MQTT_TOPIC)] = selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+        )
+
+        count = len(z2m_options)
+        return self.async_show_form(
+            step_id="add_trv",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "count": str(count),
+                "hint": (
+                    f"{count} Z2M TRV(s) available. Select one or enter a topic manually below."
+                    if count > 0 else
+                    "No Z2M TRVs detected yet. Enter the full MQTT topic manually, "
+                    "e.g. zigbee2mqtt/Living Room TRV"
+                ),
+            },
+            errors=errors,
+        )
+
+    async def async_step_add_trv_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Step 2 — confirm or edit the device name."""
+        errors: dict = {}
+
+        if user_input is not None:
+            name = user_input.get(CONF_DEVICE_NAME, "").strip()
+            if not name:
                 errors[CONF_DEVICE_NAME] = "required"
             else:
                 return self.async_create_entry(
                     title=name,
                     data={
-                        CONF_ENTRY_TYPE: ENTRY_TYPE_TRV,
-                        CONF_MQTT_TOPIC: topic,
+                        CONF_ENTRY_TYPE:  ENTRY_TYPE_TRV,
+                        CONF_MQTT_TOPIC:  self._trv_topic,
                         CONF_DEVICE_NAME: name,
-                        CONF_MODEL: "TRV",
+                        CONF_MODEL:       "TRV",
                     },
                 )
 
         return self.async_show_form(
-            step_id="add_trv",
+            step_id="add_trv_confirm",
             data_schema=vol.Schema({
-                vol.Required(CONF_DEVICE_NAME): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
-                ),
-                vol.Required(CONF_MQTT_TOPIC): selector.TextSelector(
+                vol.Required(
+                    CONF_DEVICE_NAME,
+                    description={"suggested_value": self._trv_name},
+                ): selector.TextSelector(
                     selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
                 ),
             }),
+            description_placeholders={
+                "topic": self._trv_topic,
+            },
             errors=errors,
         )
 
@@ -95,21 +190,96 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_add_receiver(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
+        """Step 1 — browse and select a Z2M climate entity for the receiver."""
         errors: dict = {}
+
+        already_registered: set[str] = set()
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_RECEIVER:
+                already_registered.add(entry.data.get(CONF_MQTT_TOPIC, ""))
+
+        from homeassistant.helpers import entity_registry as er, device_registry as dr
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+
+        z2m_options: dict[str, str] = {}
+        for entry in ent_reg.entities.values():
+            if entry.entity_id.split(".")[0] != "climate":
+                continue
+            if entry.platform != "mqtt":
+                continue
+            uid = entry.unique_id or ""
+            if uid.startswith("room_") and uid.endswith("_climate"):
+                continue
+            topic = uid
+            if topic in already_registered:
+                continue
+            friendly = entry.name or entry.original_name or ""
+            if not friendly and entry.device_id:
+                dev = dev_reg.async_get(entry.device_id)
+                friendly = (dev.name_by_user or dev.name or "") if dev else ""
+            label = f"{friendly} ({topic})" if friendly else topic
+            z2m_options[topic] = label
+
         if user_input is not None:
-            topic = user_input[CONF_MQTT_TOPIC].strip()
-            name  = user_input[CONF_DEVICE_NAME].strip()
-            model = user_input[CONF_MODEL]
+            selected = user_input.get("z2m_entity", "").strip()
+            manual   = user_input.get(CONF_MQTT_TOPIC, "").strip()
+            topic    = selected or manual
             if not topic:
-                errors[CONF_MQTT_TOPIC] = "required"
-            elif not name:
+                errors["z2m_entity"] = "required"
+            else:
+                self._recv_topic = topic
+                self._recv_name  = z2m_options.get(topic, "").split(" (")[0] or topic.split("/")[-1]
+                return await self.async_step_add_receiver_confirm()
+
+        schema: dict = {}
+        if z2m_options:
+            schema[vol.Optional("z2m_entity")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=k, label=v)
+                        for k, v in sorted(z2m_options.items(), key=lambda x: x[1])
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        schema[vol.Optional(CONF_MQTT_TOPIC)] = selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+        )
+
+        count = len(z2m_options)
+        return self.async_show_form(
+            step_id="add_receiver",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "count": str(count),
+                "hint": (
+                    f"{count} Z2M device(s) available. Select one or enter a topic manually."
+                    if count > 0 else
+                    "No Z2M devices detected yet. Enter the full MQTT topic manually, "
+                    "e.g. zigbee2mqtt/Hive Receiver"
+                ),
+            },
+            errors=errors,
+        )
+
+    async def async_step_add_receiver_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Step 2 — confirm name and select model."""
+        errors: dict = {}
+
+        if user_input is not None:
+            name  = user_input.get(CONF_DEVICE_NAME, "").strip()
+            model = user_input.get(CONF_MODEL, MODEL_SLR1)
+            if not name:
                 errors[CONF_DEVICE_NAME] = "required"
             else:
                 return self.async_create_entry(
                     title=name,
                     data={
                         CONF_ENTRY_TYPE:      ENTRY_TYPE_RECEIVER,
-                        CONF_MQTT_TOPIC:      topic,
+                        CONF_MQTT_TOPIC:      self._recv_topic,
                         CONF_DEVICE_NAME:     name,
                         CONF_MODEL:           model,
                         CONF_SHOW_HEAT_SCHED: user_input.get(CONF_SHOW_HEAT_SCHED, True),
@@ -118,12 +288,12 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
         return self.async_show_form(
-            step_id="add_receiver",
+            step_id="add_receiver_confirm",
             data_schema=vol.Schema({
-                vol.Required(CONF_DEVICE_NAME): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
-                ),
-                vol.Required(CONF_MQTT_TOPIC): selector.TextSelector(
+                vol.Required(
+                    CONF_DEVICE_NAME,
+                    description={"suggested_value": self._recv_name},
+                ): selector.TextSelector(
                     selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
                 ),
                 vol.Required(CONF_MODEL, default=MODEL_SLR1): selector.SelectSelector(
@@ -135,6 +305,9 @@ class HiveTRVLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_SHOW_HEAT_SCHED, default=True): selector.BooleanSelector(),
                 vol.Optional(CONF_SHOW_WATER_SCHED, default=True): selector.BooleanSelector(),
             }),
+            description_placeholders={
+                "topic": self._recv_topic,
+            },
             errors=errors,
         )
 
@@ -649,3 +822,4 @@ class HiveGroupsOptionsFlow(config_entries.OptionsFlow):
             _LOGGER.info(
                 "Entity %s %s", entity_id, "hidden (in group)" if hide else "restored (left group)"
             )
+
