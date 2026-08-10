@@ -103,12 +103,12 @@
       },
       "create_group_members": {
         "title": "Create Room Group \u2014 Step 2 of 3",
-        "description": "Select TRVs for: {room_name}\n\n{count} registered TRV(s) available.",
+        "description": "Select TRVs for: {room_name}\n\n{count} registered TRV(s) available.\n\nAll TRVs in this group will act as a single device.",
         "data": {
           "member_ids": "TRV devices"
         },
         "data_description": {
-          "member_ids": "Select one or more TRVs to add to this group. Only registered TRVs that are not already in another group are shown."
+          "member_ids": "Select one or more TRVs. Each TRV's individual climate entity will be hidden once added to a group."
         }
       },
       "create_group_sensors": {
