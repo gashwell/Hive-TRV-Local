@@ -1,297 +1,256 @@
-"""The Hive TRV Local integration."""
-
+"""Hive TRV Local v3."""
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ENTITIES, CONF_NAME, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    CONF_ADVANCED_MODE,
-    CONF_CALIBRATION_HEARTBEAT,
-    CONF_CALIBRATION_IGNORE_OFF,
-    CONF_CLOSE_DELAY,
-    CONF_DEBOUNCE_DELAY,
-    CONF_EXPAND_SECTIONS,
-    CONF_EXPOSE_CONFIG,
-    CONF_EXPOSE_MEMBER_ENTITIES,
-    CONF_EXPOSE_SMART_SENSORS,
-    CONF_FEATURE_STRATEGY,
-    CONF_GRACE_PERIOD,
-    CONF_HUMIDITY_CURRENT_AVG,
-    CONF_HUMIDITY_SENSORS,
-    CONF_HUMIDITY_TARGET_AVG,
-    CONF_HUMIDITY_TARGET_ROUND,
-    CONF_HUMIDITY_UPDATE_TARGETS,
-    CONF_HUMIDITY_USE_MASTER,
-    CONF_HVAC_MODE_STRATEGY,
-    CONF_IGNORE_OFF_MEMBERS_SCHEDULE,
-    CONF_IGNORE_OFF_MEMBERS_SYNC,
-    CONF_IGNORE_OFF_MEMBERS_TEMPERATURE,
-    CONF_ISOLATION_ACTIVATE_DELAY,
-    CONF_ISOLATION_ENTITIES,
-    CONF_ISOLATION_RESTORE_DELAY,
-    CONF_ISOLATION_SENSOR,
-    CONF_ISOLATION_TRIGGER_HVAC_MODES,
-    CONF_ISOLATION_TRIGGER,
-    CONF_MASTER_ENTITY,
-    CONF_MEMBER_OFFSET_CORRECTION,
-    CONF_MEMBER_TEMP_OFFSETS,
-    CONF_MIN_TEMP_OFF,
-    CONF_OVERRIDE_DURATION,
-    CONF_PERSIST_ACTIVE_SCHEDULE,
-    CONF_PERSIST_CHANGES,
-    CONF_PRESENCE_ACTION,
-    CONF_PRESENCE_AWAY_DELAY,
-    CONF_PRESENCE_AWAY_OFFSET,
-    CONF_PRESENCE_AWAY_PRESET,
-    CONF_PRESENCE_AWAY_TEMPERATURE,
-    CONF_PRESENCE_MODE,
-    CONF_PRESENCE_RETURN_DELAY,
-    CONF_PRESENCE_SENSOR,
-    CONF_PRESENCE_ZONE,
-    CONF_RESYNC_INTERVAL,
-    CONF_RETRY_ATTEMPTS,
-    CONF_RETRY_DELAY,
-    CONF_ROOM_OPEN_DELAY,
-    CONF_ROOM_SENSOR,
-    CONF_RANGE_TEMPLATE_ENTITIES,
-    CONF_RANGE_TEMPLATE_DEADBAND_ACTION,
-    CONF_SCHEDULE_BYPASS_ENTITY,
-    CONF_SCHEDULE_ENTITY,
-    CONF_STAGGERED_CALL_DELAY,
-    CONF_SYNC_ATTRS,
-    CONF_SYNC_MODE,
-    CONF_TEMP_CALIBRATION_MODE,
-    CONF_TEMP_CURRENT_AVG,
-    CONF_TEMP_SENSORS,
-    CONF_TEMP_TARGET_AVG,
-    CONF_TEMP_TARGET_ROUND,
-    CONF_TEMP_UPDATE_TARGETS,
-    CONF_TEMP_USE_MASTER,
-    CONF_UNION_OUT_OF_BOUNDS_ACTION,
-    CONF_UNION_UNSUPPORTED_HVAC_ACTION,
-    CONF_WINDOW_ACTION,
-    CONF_WINDOW_ADOPT_MANUAL_CHANGES,
-    CONF_WINDOW_MODE,
-    CONF_WINDOW_TEMPERATURE,
-    CONF_ZONE_OPEN_DELAY,
-    CONF_ZONE_SENSOR,
-    DOMAIN,
+    ATTR_BOOST_DURATION, ATTR_BOOST_TEMPERATURE, ATTR_SCHEDULE,
+    CONF_BOILER_ENTITY, CONF_ENABLE_DIAGNOSTICS,
+    CONFIG_VERSION, DATA_BOILER, DATA_STORE,
+    DEFAULT_BOOST_MINUTES, DEFAULT_BOOST_TEMP,
+    DOMAIN, ENTRY_DEFAULTS, EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED,
+    EVENT_ROOM_UPDATED, PLATFORMS,
+    SERVICE_ADVANCE_SCHEDULE, SERVICE_BOOST, SERVICE_CLEAR_SCHEDULE,
+    SERVICE_END_BOOST, SERVICE_SET_SCHEDULE,
 )
 
-# Valid configuration keys for migration whitelist
-VALID_CONFIG_KEYS = {
-    CONF_NAME,
-    CONF_ENTITIES,
-    CONF_ADVANCED_MODE,
-    # HVAC options
-    CONF_HVAC_MODE_STRATEGY,
-    CONF_FEATURE_STRATEGY,
-    CONF_UNION_OUT_OF_BOUNDS_ACTION,
-    CONF_UNION_UNSUPPORTED_HVAC_ACTION,
-    # Master entity
-    CONF_MASTER_ENTITY,
-    # Temperature options
-    CONF_TEMP_CURRENT_AVG,
-    CONF_TEMP_TARGET_AVG,
-    CONF_TEMP_TARGET_ROUND,
-    CONF_TEMP_SENSORS,
-    CONF_TEMP_UPDATE_TARGETS,
-    CONF_TEMP_USE_MASTER,
-    CONF_TEMP_CALIBRATION_MODE,
-    CONF_CALIBRATION_HEARTBEAT,
-    CONF_CALIBRATION_IGNORE_OFF,
-    # Humidity options
-    CONF_HUMIDITY_CURRENT_AVG,
-    CONF_HUMIDITY_TARGET_AVG,
-    CONF_HUMIDITY_TARGET_ROUND,
-    CONF_HUMIDITY_SENSORS,
-    CONF_HUMIDITY_UPDATE_TARGETS,
-    CONF_HUMIDITY_USE_MASTER,
-    # Service call options
-    CONF_DEBOUNCE_DELAY,
-    CONF_RETRY_ATTEMPTS,
-    CONF_RETRY_DELAY,
-    CONF_STAGGERED_CALL_DELAY,
-    CONF_GRACE_PERIOD,
-    # Sync mode options
-    CONF_SYNC_MODE,
-    CONF_SYNC_ATTRS,
-    CONF_IGNORE_OFF_MEMBERS_SYNC,
-    CONF_MIN_TEMP_OFF,
-    # Schedule options (partial sync)
-    CONF_IGNORE_OFF_MEMBERS_SCHEDULE,
-    # Temperature aggregation options
-    CONF_IGNORE_OFF_MEMBERS_TEMPERATURE,
-    # Window control options
-    CONF_WINDOW_MODE,
-    CONF_WINDOW_ADOPT_MANUAL_CHANGES,
-    CONF_WINDOW_ACTION,
-    CONF_WINDOW_TEMPERATURE,
-    CONF_ROOM_SENSOR,
-    CONF_ZONE_SENSOR,
-    CONF_ROOM_OPEN_DELAY,
-    CONF_ZONE_OPEN_DELAY,
-    CONF_CLOSE_DELAY,
-    # Presence control options
-    CONF_PRESENCE_MODE,
-    CONF_PRESENCE_SENSOR,
-    CONF_PRESENCE_ZONE,
-    CONF_PRESENCE_ACTION,
-    CONF_PRESENCE_AWAY_OFFSET,
-    CONF_PRESENCE_AWAY_TEMPERATURE,
-    CONF_PRESENCE_AWAY_PRESET,
-    CONF_PRESENCE_AWAY_DELAY,
-    CONF_PRESENCE_RETURN_DELAY,
-    # Schedule options
-    CONF_SCHEDULE_ENTITY,
-    CONF_SCHEDULE_BYPASS_ENTITY,
-    CONF_RESYNC_INTERVAL,
-    CONF_OVERRIDE_DURATION,
-    CONF_PERSIST_CHANGES,
-    CONF_PERSIST_ACTIVE_SCHEDULE,
-    # Other options
-    CONF_EXPOSE_SMART_SENSORS,
-    CONF_EXPOSE_MEMBER_ENTITIES,
-    CONF_EXPOSE_CONFIG,
-    CONF_EXPAND_SECTIONS,
-    CONF_RANGE_TEMPLATE_ENTITIES,
-    CONF_RANGE_TEMPLATE_DEADBAND_ACTION,
+_LOGGER = logging.getLogger(f"custom_components.{DOMAIN}")
 
-    # Member Isolation options
-    CONF_ISOLATION_SENSOR,
-    CONF_ISOLATION_ENTITIES,
-    CONF_ISOLATION_ACTIVATE_DELAY,
-    CONF_ISOLATION_RESTORE_DELAY,
-    CONF_ISOLATION_TRIGGER,
-    CONF_ISOLATION_TRIGGER_HVAC_MODES,
-    # Per-member temperature offsets
-    CONF_MEMBER_TEMP_OFFSETS,
-    CONF_MEMBER_OFFSET_CORRECTION,
-}
-
-# Track which platforms have been set up per entry
-SETUP_PLATFORMS = "setup_platforms"
-
-_LOGGER = logging.getLogger(__name__)
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-
-
-async def async_setup(hass, config):
-    """Register Hive TRV Card with HA frontend."""
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register Hive TRV card JS files with the HA frontend."""
+    from pathlib import Path
     from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
+
     for card_file in ("hive-trv-card.js", "hive-trv-group-card.js"):
         card_path = Path(__file__).parent / card_file
         if card_path.exists():
-            url = f"/{DOMAIN}/{card_file}"
-            await hass.http.async_register_static_paths([StaticPathConfig(url, str(card_path), True)])
-            add_extra_js_url(hass, url)
+            url_path = f"/{DOMAIN}/{card_file}"
+            await hass.http.async_register_static_paths([
+                StaticPathConfig(url_path, str(card_path), True)
+            ])
+            add_extra_js_url(hass, url_path)
+    _LOGGER.info("Hive TRV cards registered")
     return True
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Hive TRV Local from a config entry."""
-
-    # One-time migration for entries that have no options yet, moving all data to options
-    if not entry.options:
-        hass.config_entries.async_update_entry(entry, data={}, options=entry.data)
-
-    # Initialize domain data
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].setdefault(entry.entry_id, {})
-    hass.data[DOMAIN][entry.entry_id][SETUP_PLATFORMS] = set()
-
-    # Set up climate and sensor first — climate.async_setup_entry stores the group
-    # reference in hass.data, which switch.async_setup_entry depends on.
-    await hass.config_entries.async_forward_entry_setups(entry, [Platform.CLIMATE, Platform.SENSOR])
-    hass.data[DOMAIN][entry.entry_id][SETUP_PLATFORMS].add(Platform.CLIMATE)
-    hass.data[DOMAIN][entry.entry_id][SETUP_PLATFORMS].add(Platform.SENSOR)
-
-    # Set up switch and number after climate so the group reference is guaranteed to exist.
-    await hass.config_entries.async_forward_entry_setups(entry, [Platform.SWITCH, Platform.NUMBER])
-    hass.data[DOMAIN][entry.entry_id][SETUP_PLATFORMS].add(Platform.SWITCH)
-    hass.data[DOMAIN][entry.entry_id][SETUP_PLATFORMS].add(Platform.NUMBER)
-
-    # Register update listener for options changes, which will trigger a reload
-    entry.async_on_unload(entry.add_update_listener(_update_listener))
-
-    return True
-
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate old config entries to the current version.
-
-    Versions before v10: Soft Reset
-        - Combine data+options
-        - Apply historical transformations (since v7)
-        - Filter out invalid configuration keys
-        - Restore defaults for valid keys not present
-    """
-    if entry.version < 10:
-        _LOGGER.info("[%s] Migrating config entry from version %s to 10 (Soft Reset)", entry.title, entry.version)
-
-        # Combine data + options (covers pre-v7 entries that still used entry.data)
-        old_config = {**entry.data, **entry.options}
-
-        # v7 → v8: split ignore_off_members; rename SyncMode.STANDARD → DISABLED
-        ignore_off = old_config.pop("ignore_off_members", False)
-        if CONF_IGNORE_OFF_MEMBERS_SYNC not in old_config:
-            old_config[CONF_IGNORE_OFF_MEMBERS_SYNC] = ignore_off
-        if CONF_IGNORE_OFF_MEMBERS_SCHEDULE not in old_config:
-            old_config[CONF_IGNORE_OFF_MEMBERS_SCHEDULE] = ignore_off
-        if old_config.get(CONF_SYNC_MODE) == "standard":
-            old_config[CONF_SYNC_MODE] = "disabled"
-
-        # v8 → v9: WindowControlMode "off"/"on" → "disabled"/"enabled"
-        if old_config.get(CONF_WINDOW_MODE) == "off":
-            old_config[CONF_WINDOW_MODE] = "disabled"
-        elif old_config.get(CONF_WINDOW_MODE) == "on":
-            old_config[CONF_WINDOW_MODE] = "enabled"
-
-        # v9 → v10: CONF_PRESENCE_SENSOR str → list[str]; add CONF_ADVANCED_MODE
-        presence_sensor = old_config.get(CONF_PRESENCE_SENSOR)
-        if isinstance(presence_sensor, str):
-            old_config[CONF_PRESENCE_SENSOR] = [presence_sensor]
-        if CONF_ADVANCED_MODE not in old_config:
-            old_config[CONF_ADVANCED_MODE] = True
-
-        # Whitelist filter: discard all deprecated/renamed keys
-        new_options = {key: value for key, value in old_config.items() if key in VALID_CONFIG_KEYS}
-
-        # Ensure defaults for keys added in earlier versions
-        if CONF_EXPAND_SECTIONS not in new_options:
-            new_options[CONF_EXPAND_SECTIONS] = False
-
-        hass.config_entries.async_update_entry(entry, data={}, options=new_options, version=10)
-
-        _LOGGER.info("[%s] Migration to v10 complete. %d valid keys preserved.", entry.title, len(new_options))
-
+    _LOGGER.info("Migrating config entry v%s → v%s", entry.version, CONFIG_VERSION)
+    hass.config_entries.async_update_entry(
+        entry, data={**ENTRY_DEFAULTS, **entry.data}, version=CONFIG_VERSION,
+    )
     return True
 
 
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    from .boiler import BoilerDemandManager
+    from .storage import HiveTRVStorage
+
+    effective     = {**ENTRY_DEFAULTS, **entry.data}
+    boiler_entity = (entry.options or {}).get(CONF_BOILER_ENTITY, effective.get(CONF_BOILER_ENTITY))
+
+    _LOGGER.info("Setting up Hive TRV Local v3 (boiler=%s)", boiler_entity)
+
+    store = HiveTRVStorage(hass, entry.entry_id)
+    await store.async_load()
+
+    rooms: dict[str, Any] = {}
+    boiler_mgr = BoilerDemandManager(hass, boiler_entity, lambda: rooms)
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        DATA_STORE:  store,
+        DATA_BOILER: boiler_mgr,
+        "rooms":     rooms,
+    }
+
+    persisted = store.get_all_rooms()
+    _LOGGER.info("Loading %d persisted room group(s)", len(persisted))
+    for room_id, room_data in persisted.items():
+        await _create_room(hass, entry, store, boiler_mgr, rooms, room_id, room_data)
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    @callback
+    def _on_room_added(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        if "coordinator" in event.data:
+            return
+        room_id   = event.data.get("room_id")
+        room_data = event.data.get("room_data")
+        if not room_id or not room_data:
+            _LOGGER.warning("EVENT_ROOM_ADDED missing room_id or room_data")
+            return
+        _LOGGER.info("Room added: %s (%s)", room_data.get("name"), room_id)
+        hass.async_create_task(
+            _create_room(hass, entry, store, boiler_mgr, rooms, room_id, room_data),
+            name=f"hive_trv_create_room_{room_id}",
+        )
+
+    @callback
+    def _on_room_updated(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        room_id     = event.data.get("room_id")
+        new_members = event.data.get("new_members", [])
+        _LOGGER.info("Room updated: %s → %d member(s)", room_id, len(new_members))
+        if room_id in rooms:
+            rooms[room_id].update_members(new_members)
+            boiler_mgr.unsubscribe_all()
+            for rc in rooms.values():
+                boiler_mgr.subscribe_members(rc.member_entity_ids)
+
+    @callback
+    def _on_room_removed(event: Any) -> None:
+        if event.data.get("entry_id") != entry.entry_id:
+            return
+        room_id = event.data.get("room_id")
+        _LOGGER.info("Room removed: %s", room_id)
+        rc = rooms.pop(room_id, None)
+        if rc:
+            hass.async_create_task(rc.async_unload(), name=f"hive_trv_unload_room_{room_id}")
+        boiler_mgr.unsubscribe_all()
+        for r in rooms.values():
+            boiler_mgr.subscribe_members(r.member_entity_ids)
+
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_ADDED,   _on_room_added))
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_UPDATED, _on_room_updated))
+    entry.async_on_unload(hass.bus.async_listen(EVENT_ROOM_REMOVED, _on_room_removed))
+
+    if not hass.services.has_service(DOMAIN, SERVICE_BOOST):
+        _register_services(hass)
+
+    entry.async_on_unload(entry.add_update_listener(_on_options_updated))
+    _LOGGER.info("Hive TRV Local v3 setup complete (%d room(s))", len(rooms))
+    return True
+
+
+async def _on_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    old_boiler = (entry.data or {}).get(CONF_BOILER_ENTITY)
+    new_boiler = (entry.options or {}).get(CONF_BOILER_ENTITY)
+    old_diag   = (entry.data or {}).get(CONF_ENABLE_DIAGNOSTICS, False)
+    new_diag   = (entry.options or {}).get(CONF_ENABLE_DIAGNOSTICS, False)
+    if old_boiler != new_boiler or old_diag != new_diag:
+        _LOGGER.info("Settings changed — reloading")
+        await hass.config_entries.async_reload(entry.entry_id)
+    else:
+        _LOGGER.debug("Options updated (group change) — no reload needed")
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-
-    # Get setup platforms
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    platforms = list(entry_data.get(SETUP_PLATFORMS, {Platform.CLIMATE}))
-
-    # Unload platforms
-    unloaded = await hass.config_entries.async_unload_platforms(entry, platforms)
-
-    # Clean up domain data
-    if unloaded and entry.entry_id in hass.data.get(DOMAIN, {}):
-        hass.data[DOMAIN].pop(entry.entry_id)
-
-    return unloaded
+    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if ok:
+        ed = hass.data[DOMAIN].pop(entry.entry_id, {})
+        for rc in ed.get("rooms", {}).values():
+            await rc.async_unload()
+        if bm := ed.get(DATA_BOILER):
+            bm.unsubscribe_all()
+        _LOGGER.info("Hive TRV Local v3 unloaded")
+    return ok
 
 
-async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update by reloading the entry."""
-    hass.config_entries.async_schedule_reload(entry.entry_id)
+async def _create_room(
+    hass: HomeAssistant, entry: ConfigEntry, store: Any,
+    boiler_mgr: Any, rooms: dict, room_id: str, room_data: dict,
+) -> Any:
+    from .room import HiveRoomCoordinator
+    name = room_data.get("name", room_id)
+    _LOGGER.info("Creating room: %s (%s) members=%s", name, room_id, room_data.get("members", []))
+    rc = HiveRoomCoordinator(
+        hass, room_id=room_id, room_name=name,
+        member_entity_ids=room_data.get("members", []),
+        temp_sensor_entity_ids=room_data.get("temp_sensors", []),
+        store=store,
+    )
+    await rc.async_setup()
+    rooms[room_id] = rc
+    if room_data.get("schedule"):
+        await rc.async_set_schedule(room_data["schedule"])
+    boiler_mgr.subscribe_members(rc.member_entity_ids)
+    rc.async_add_listener(lambda: hass.async_create_task(boiler_mgr.async_evaluate()))
+    hass.bus.async_fire(EVENT_ROOM_ADDED, {
+        "entry_id": entry.entry_id, "room_id": room_id, "coordinator": rc,
+    })
+    _LOGGER.info("Room ready: %s | %d member(s)", name, len(rc.member_entity_ids))
+    return rc
+
+
+def _room_for_entity_id(hass: HomeAssistant, entity_id: str) -> Any:
+    ent_reg = er.async_get(hass)
+    entry   = ent_reg.async_get(entity_id)
+    if entry is None:
+        _LOGGER.warning("Service call: entity not found: %s", entity_id)
+        return None
+    uid = entry.unique_id or ""
+    if uid.startswith("room_") and uid.endswith("_climate"):
+        room_id = uid[len("room_"):-len("_climate")]
+        for ed in hass.data.get(DOMAIN, {}).values():
+            rc = ed.get("rooms", {}).get(room_id)
+            if rc is not None:
+                return rc
+    _LOGGER.warning("Service call: no coordinator for %s (uid=%s)", entity_id, uid)
+    return None
+
+
+def _register_services(hass: HomeAssistant) -> None:
+    import voluptuous as vol
+
+    async def _boost(call: ServiceCall) -> None:
+        rc = _room_for_entity_id(hass, call.data["entity_id"])
+        if rc:
+            await rc.async_start_boost(call.data.get(ATTR_BOOST_TEMPERATURE), call.data.get(ATTR_BOOST_DURATION))
+
+    async def _end_boost(call: ServiceCall) -> None:
+        rc = _room_for_entity_id(hass, call.data["entity_id"])
+        if rc:
+            await rc.async_end_boost()
+
+    async def _set_schedule(call: ServiceCall) -> None:
+        rc = _room_for_entity_id(hass, call.data["entity_id"])
+        if not rc:
+            return
+        schedule = call.data[ATTR_SCHEDULE]
+        await rc.async_set_schedule(schedule)
+        for ed in hass.data.get(DOMAIN, {}).values():
+            s = ed.get(DATA_STORE)
+            if s and rc.room_id in ed.get("rooms", {}):
+                await s.async_set_room_schedule(rc.room_id, schedule)
+
+    async def _clear_schedule(call: ServiceCall) -> None:
+        rc = _room_for_entity_id(hass, call.data["entity_id"])
+        if rc:
+            rc.clear_schedule()
+
+    async def _advance(call: ServiceCall) -> None:
+        rc = _room_for_entity_id(hass, call.data["entity_id"])
+        if rc:
+            await rc._schedule_mgr.advance_to_next()
+
+    _EID = vol.Schema({vol.Required("entity_id"): str})
+    _BOOST_S = vol.Schema({
+        vol.Required("entity_id"): str,
+        vol.Optional(ATTR_BOOST_TEMPERATURE, default=DEFAULT_BOOST_TEMP): vol.Coerce(float),
+        vol.Optional(ATTR_BOOST_DURATION, default=DEFAULT_BOOST_MINUTES): vol.All(int, vol.Range(min=1, max=1440)),
+    })
+    _SCHED_S = vol.Schema({
+        vol.Required("entity_id"): str,
+        vol.Required(ATTR_SCHEDULE): [vol.Schema({
+            vol.Required("days"): [vol.All(int, vol.Range(min=0, max=6))],
+            vol.Required("time"): str,
+            vol.Required("temperature"): vol.Coerce(float),
+        })],
+    })
+    hass.services.async_register(DOMAIN, SERVICE_BOOST,            _boost,          _BOOST_S)
+    hass.services.async_register(DOMAIN, SERVICE_END_BOOST,        _end_boost,      _EID)
+    hass.services.async_register(DOMAIN, SERVICE_SET_SCHEDULE,     _set_schedule,   _SCHED_S)
+    hass.services.async_register(DOMAIN, SERVICE_CLEAR_SCHEDULE,   _clear_schedule, _EID)
+    hass.services.async_register(DOMAIN, SERVICE_ADVANCE_SCHEDULE, _advance,        _EID)
