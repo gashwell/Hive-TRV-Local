@@ -196,6 +196,21 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
 
         return result
 
+    def _open_meteo_weather_entity(self) -> str | None:
+        """Return the first Open-Meteo weather entity_id if installed and loaded."""
+        from homeassistant.helpers import entity_registry as er
+        # Check config entries for open_meteo domain
+        for ce in self.hass.config_entries.async_entries("open_meteo"):
+            if ce.state.value != "loaded":
+                continue
+            # Find weather entity for this entry
+            ent_reg = er.async_get(self.hass)
+            for entry in ent_reg.entities.values():
+                if (entry.config_entry_id == ce.entry_id
+                        and entry.entity_id.startswith("weather.")):
+                    return entry.entity_id
+        return None
+
     def _no_rooms_result(self) -> config_entries.FlowResult:
         return self.async_create_entry(title="", data=self.config_entry.options or {})
 
@@ -582,7 +597,7 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         """Optionally pick standalone temperature sensors for this room."""
         if user_input is not None:
             self._room_sensors = user_input.get("sensor_ids") or []
-            return await self._do_create_room()
+            return await self.async_step_room_frost()
 
         # Get registered sensor devices
         devices = self._all_devices()
@@ -618,17 +633,66 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             },
         )
 
+    async def async_step_room_frost(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        """Frost protection step — enable Open-Meteo based outdoor temp guard."""
+        weather_entity = self._open_meteo_weather_entity()
+        open_meteo_available = weather_entity is not None
+
+        if user_input is not None:
+            self._frost_enabled = user_input.get("frost_enabled", False)
+            self._frost_temp    = float(user_input.get("frost_temperature", 2.0))
+            self._frost_entity  = weather_entity if self._frost_enabled else None
+            return await self._do_create_room()
+
+        schema: dict = {}
+
+        if open_meteo_available:
+            schema[vol.Optional("frost_enabled", default=False)] = (
+                selector.BooleanSelector()
+            )
+            schema[vol.Optional("frost_temperature", default=2.0)] = (
+                selector.NumberSelector(selector.NumberSelectorConfig(
+                    min=-10, max=10, step=0.5,
+                    unit_of_measurement="°C",
+                    mode=selector.NumberSelectorMode.SLIDER,
+                ))
+            )
+        # If not available, still show the step with an informational message
+        # but no fields — user just clicks Next
+
+        hint = (
+            f"Open-Meteo detected ({weather_entity}). "
+            "Enable frost protection to automatically heat this room "
+            "when the outdoor temperature falls to or below the threshold."
+            if open_meteo_available else
+            "Open-Meteo is not installed. Install it via HACS to enable "
+            "weather-based frost protection for this room."
+        )
+
+        return self.async_show_form(
+            step_id="room_frost",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "room_name":   self._room_name,
+                "hint":        hint,
+                "open_meteo":  "available" if open_meteo_available else "not_available",
+            },
+        )
+
     async def _do_create_room(self) -> config_entries.FlowResult:
         room_id   = str(uuid.uuid4())
         room_data = {
-            "name":         self._room_name,
-            "device_ids":   self._room_devs,
-            "sensor_ids":   self._room_sensors,
-            "schedule":     [],
-            "boost_temp":   22.0,
-            "boost_minutes":30,
-            "frost_temp":   7.0,
-            "frost_enabled":False,
+            "name":           self._room_name,
+            "device_ids":     self._room_devs,
+            "sensor_ids":     self._room_sensors,
+            "schedule":       [],
+            "boost_temp":     22.0,
+            "boost_minutes":  30,
+            "frost_temp":     self._frost_temp,
+            "frost_enabled":  self._frost_enabled,
+            "weather_entity": self._frost_entity,
         }
         c = self._coordinator()
         if c:
@@ -699,6 +763,24 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 c = self._coordinator()
                 if c:
                     await c.async_update_room(self._edit_room_id, new_devs, new_sens)
+                # Update frost settings
+                frost_enabled = user_input.get("frost_enabled", False)
+                frost_temp    = float(user_input.get("frost_temperature", 2.0))
+                weather_eid   = self._open_meteo_weather_entity()
+                store = self._store()
+                if store:
+                    rd = dict(store.get_room(self._edit_room_id) or {})
+                    rd["frost_enabled"]  = frost_enabled
+                    rd["frost_temp"]     = frost_temp
+                    rd["weather_entity"] = weather_eid if frost_enabled else None
+                    await store.async_save_room(self._edit_room_id, rd)
+                    # Update live room object
+                    if c:
+                        room = c.get_room(self._edit_room_id)
+                        if room:
+                            room._frost_enabled  = frost_enabled
+                            room._frost_temp     = frost_temp
+                            room._weather_entity = weather_eid if frost_enabled else None
             if not errors:
                 return self.async_create_entry(title="", data=self.config_entry.options or {})
 
@@ -720,11 +802,34 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 )
             )
 
+        # Add frost protection fields if Open-Meteo is available
+        weather_entity     = self._open_meteo_weather_entity()
+        open_meteo_ok      = weather_entity is not None
+        current_frost      = room_data.get("frost_enabled", False)
+        current_frost_temp = float(room_data.get("frost_temp", 2.0))
+
+        if open_meteo_ok:
+            schema[vol.Optional("frost_enabled",     default=current_frost)]      = selector.BooleanSelector()
+            schema[vol.Optional("frost_temperature", default=current_frost_temp)] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-10, max=10, step=0.5,
+                    unit_of_measurement="°C",
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            )
+
+        frost_hint = (
+            f"Open-Meteo detected ({weather_entity}). Toggle frost protection below."
+            if open_meteo_ok else
+            "Install Open-Meteo via HACS to enable weather-based frost protection."
+        )
+
         return self.async_show_form(
             step_id="edit_room_members",
             data_schema=vol.Schema(schema),
             description_placeholders={
-                "room_name": room_data.get("name", self._edit_room_id)
+                "room_name":  room_data.get("name", self._edit_room_id),
+                "frost_hint": frost_hint,
             },
             errors=errors,
         )
