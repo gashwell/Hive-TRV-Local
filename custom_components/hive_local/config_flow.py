@@ -230,9 +230,10 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_menu(
             step_id="init",
             menu_options={
-                "manage_devices": "Devices — add, remove TRVs, receivers, sensors",
-                "manage_rooms":   "Rooms — create and manage heating zones",
-                "settings":       "Settings — boiler, Z2M topic, diagnostics",
+                "manage_devices":    "Devices — add and remove TRVs, receivers, sensors",
+                "manage_rooms":      "Rooms — create and manage heating zones",
+                "on_demand_heating": "On-demand heating — link TRVs and rooms to receiver",
+                "settings":          "Settings — boiler, Z2M topic, frost protection",
             },
         )
 
@@ -323,11 +324,10 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_menu(
             step_id="manage_devices",
             menu_options={
-                "add_trv":          "Add a TRV",
-                "add_receiver":     "Add a receiver (SLR1 / SLR2 / OTR1)",
-                "add_sensor":       "Add a temperature sensor",
-                "link_trv_receiver":"Link TRV to receiver (on-demand heating)",
-                "remove_device":    "Remove a device",
+                "add_trv":       "Add a TRV",
+                "add_receiver":  "Add a receiver (SLR1 / SLR2 / OTR1)",
+                "add_sensor":    "Add a temperature sensor",
+                "remove_device": "Remove a device",
             },
         )
 
@@ -524,6 +524,162 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "topic": self._dev_topic,
                 "type":  "TRV" if self._dev_type == DEVICE_TYPE_TRV else f"Receiver ({self._dev_model})",
+            },
+        )
+
+    # ── On-demand heating ─────────────────────────────────────────────────────
+
+    async def async_step_on_demand_heating(self, user_input: dict | None = None) -> config_entries.FlowResult:
+        """Top-level on-demand heating menu.
+
+        Shows all registered TRVs and rooms with their current receiver link,
+        then lets the user pick which one to configure.
+        """
+        store     = self._store()
+        devices   = self._all_devices()
+        rooms     = self._all_rooms()
+        receivers = self._registered_receivers()
+
+        options: dict[str, str] = {}
+
+        # Rooms first
+        for rid, rd in sorted(rooms.items(), key=lambda x: x[1].get("name","")):
+            name     = rd.get("name", rid)
+            recv_id  = rd.get("receiver_device_id","")
+            recv_lbl = receivers.get(recv_id, "not linked") if recv_id else "not linked"
+            options[f"room:{rid}"] = f"{name}  →  {recv_lbl}"
+
+        # Individual TRVs
+        for did, dd in sorted(devices.items(), key=lambda x: x[1].get("name","")):
+            if dd.get("type") != DEVICE_TYPE_TRV:
+                continue
+            name     = dd.get("name", did)
+            recv_id  = dd.get("receiver_device_id","")
+            recv_lbl = receivers.get(recv_id, "not linked") if recv_id else "not linked"
+            in_room  = store.room_for_device(did) if store else None
+            room_tag = f" (in room)" if in_room else " (standalone)"
+            options[f"trv:{did}"] = f"{name}{room_tag}  →  {recv_lbl}"
+
+        if not options:
+            return self.async_show_form(
+                step_id="on_demand_heating",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "hint": "No TRVs or rooms configured yet. Add a TRV first via Devices."
+                },
+            )
+
+        if not receivers:
+            return self.async_show_form(
+                step_id="on_demand_heating",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "hint": "No receiver registered yet. Add a receiver first via Devices."
+                },
+            )
+
+        # Handle selection
+        if user_input is not None:
+            target = user_input.get("target", "")
+            if target.startswith("room:"):
+                self._edit_room_id   = target[5:]
+                self._link_device_id = ""
+            else:
+                self._link_device_id = target[4:]  # strip "trv:"
+                self._edit_room_id   = ""
+            return await self.async_step_assign_receiver()
+
+        return self.async_show_form(
+            step_id="on_demand_heating",
+            data_schema=vol.Schema({
+                vol.Required("target"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=k, label=v)
+                            for k, v in options.items()
+                        ],
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "hint": (
+                    "Select a TRV or room to configure. "
+                    "The current receiver link is shown next to each name. "
+                    "When a TRV or room calls for heat, its linked receiver "
+                    "will fire the boiler automatically."
+                ),
+            },
+        )
+
+    async def async_step_on_demand_heating_confirm(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        pass  # handled inline in on_demand_heating step below
+
+    # ── Shared receiver assignment step ───────────────────────────────────────
+
+    async def async_step_assign_receiver(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        """Assign a receiver to the selected TRV or room."""
+        receivers = self._registered_receivers()
+        devices   = self._all_devices()
+        rooms     = self._all_rooms()
+
+        is_room = bool(self._edit_room_id)
+        if is_room:
+            target_name    = rooms.get(self._edit_room_id, {}).get("name", self._edit_room_id)
+            current_recv   = rooms.get(self._edit_room_id, {}).get("receiver_device_id","")
+        else:
+            target_name    = devices.get(self._link_device_id, {}).get("name", self._link_device_id)
+            current_recv   = devices.get(self._link_device_id, {}).get("receiver_device_id","")
+
+        if user_input is not None:
+            recv_id = user_input.get("receiver_device_id") or None
+            c       = self._coordinator()
+            store   = self._store()
+
+            if is_room:
+                if store:
+                    rd = dict(store.get_room(self._edit_room_id) or {})
+                    rd["receiver_device_id"] = recv_id
+                    await store.async_save_room(self._edit_room_id, rd)
+                if c:
+                    c.assign_room_receiver(self._edit_room_id, recv_id)
+            else:
+                if c:
+                    await c.async_assign_device_receiver(self._link_device_id, recv_id)
+
+            return self.async_create_entry(title="", data=self.config_entry.options or {})
+
+        options = [selector.SelectOptionDict(value="", label="None — remove receiver link")]
+        options += [
+            selector.SelectOptionDict(value=did, label=name)
+            for did, name in sorted(receivers.items(), key=lambda x: x[1])
+        ]
+
+        action = "room" if is_room else "TRV"
+        return self.async_show_form(
+            step_id="assign_receiver",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "receiver_device_id",
+                    default=current_recv or "",
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "target_name": target_name,
+                "target_type": action,
+                "hint": (
+                    f"When {target_name} calls for heat, the selected receiver "
+                    "will be commanded to fire the boiler via MQTT."
+                ),
             },
         )
 

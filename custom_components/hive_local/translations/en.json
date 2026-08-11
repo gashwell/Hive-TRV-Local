@@ -18,9 +18,10 @@
       "init": {
         "title": "Hive Local",
         "menu_options": {
-          "manage_devices": "Devices",
-          "manage_rooms": "Rooms",
-          "settings": "Settings"
+          "manage_devices": "Devices \u2014 add and remove TRVs, receivers, sensors",
+          "manage_rooms": "Rooms \u2014 create and manage heating zones",
+          "on_demand_heating": "On-demand heating \u2014 link TRVs and rooms to receiver",
+          "settings": "Settings \u2014 boiler, Z2M topic, frost protection"
         }
       },
       "settings": {
@@ -45,8 +46,7 @@
           "add_trv": "Add a TRV",
           "add_receiver": "Add a receiver",
           "add_sensor": "Add a temperature sensor",
-          "remove_device": "Remove a device",
-          "link_trv_receiver": "Link TRV to receiver (on-demand heating)"
+          "remove_device": "Remove a device"
         }
       },
       "add_trv": {
@@ -186,6 +186,26 @@
         },
         "data_description": {
           "receiver_device_id": "When this TRV calls for heat, the receiver will be commanded to fire the boiler."
+        }
+      },
+      "on_demand_heating": {
+        "title": "On-demand heating",
+        "description": "{hint}",
+        "data": {
+          "target": "TRV or room"
+        },
+        "data_description": {
+          "target": "Current receiver link shown next to each name. Select one to change it."
+        }
+      },
+      "assign_receiver": {
+        "title": "Link to receiver",
+        "description": "{target_type}: {target_name}\n\n{hint}",
+        "data": {
+          "receiver_device_id": "Receiver"
+        },
+        "data_description": {
+          "receiver_device_id": "Select the receiver that fires the boiler when this TRV or room calls for heat."
         }
       }
     }
