@@ -1,0 +1,173 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hive TRV Local",
+        "menu_options": {
+          "add_trv": "Add a TRV",
+          "add_receiver": "Add a receiver (SLR1 / SLR2 / OTR1)",
+          "setup_groups": "Set up room group manager"
+        }
+      },
+      "add_trv": {
+        "title": "Add TRV \u2014 Step 1 of 2",
+        "description": "{hint}",
+        "data": {
+          "z2m_entity": "Select a discovered TRV",
+          "mqtt_topic": "Or enter topic manually"
+        },
+        "data_description": {
+          "z2m_entity": "TRVs already registered with Zigbee2MQTT and visible in Home Assistant.",
+          "mqtt_topic": "Full Z2M topic if not in the list above, e.g. zigbee2mqtt/Living Room TRV"
+        }
+      },
+      "add_receiver": {
+        "title": "Add Receiver \u2014 Step 1 of 2",
+        "description": "{hint}",
+        "data": {
+          "z2m_entity": "Select a discovered device",
+          "mqtt_topic": "Or enter topic manually"
+        },
+        "data_description": {
+          "z2m_entity": "Devices already registered with Zigbee2MQTT and visible in Home Assistant.",
+          "mqtt_topic": "Full Z2M topic if not in the list, e.g. zigbee2mqtt/Hive Receiver"
+        }
+      },
+      "setup_groups": {
+        "title": "Room Group Manager",
+        "description": "This creates the room group manager. Add TRVs first, then create groups from the room group manager Configure menu."
+      },
+      "add_trv_confirm": {
+        "title": "Add TRV \u2014 Step 2 of 2",
+        "description": "Topic: {topic}\n\nConfirm or edit the device name.",
+        "data": {
+          "device_name": "Device name"
+        },
+        "data_description": {
+          "device_name": "A friendly name shown in Home Assistant, e.g. Living Room TRV"
+        }
+      },
+      "add_receiver_confirm": {
+        "title": "Add Receiver \u2014 Step 2 of 2",
+        "description": "Topic: {topic}\n\nConfirm the device name and select the model.",
+        "data": {
+          "device_name": "Device name",
+          "model": "Receiver model",
+          "show_heat_schedule_mode": "Show schedule mode for heating",
+          "show_water_schedule_mode": "Show schedule mode for hot water"
+        },
+        "data_description": {
+          "model": "SLR1 = single channel heating, SLR2 = dual channel (heating + hot water), OTR1 = standalone"
+        }
+      }
+    },
+    "abort": {
+      "groups_already_configured": "Room group manager is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hive TRV Local",
+        "menu_options": {
+          "settings": "Settings",
+          "groups": "Manage room groups"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "boiler_entity": "Boiler / receiver entity",
+          "enable_diagnostics": "Enable diagnostic logging"
+        },
+        "data_description": {
+          "boiler_entity": "Turned on when any group member calls for heat. Supports climate, switch, and input_boolean.",
+          "enable_diagnostics": "Writes extra diagnostic entries to the HA log."
+        }
+      },
+      "groups": {
+        "title": "Room Groups",
+        "menu_options": {
+          "create_group": "Create a new room group",
+          "edit_group": "Edit group members",
+          "set_schedule": "Set a heating schedule",
+          "remove_group": "Remove a room group"
+        }
+      },
+      "create_group": {
+        "title": "Create Room Group \u2014 Step 1 of 3",
+        "description": "Enter a name for the new room group.",
+        "data": {
+          "room_name": "Room name"
+        }
+      },
+      "create_group_members": {
+        "title": "Create Room Group \u2014 Step 2 of 3",
+        "description": "Select TRVs for: {room_name}\n\n{count} registered TRV(s) available.\n\nAll TRVs in this group will act as a single device.",
+        "data": {
+          "member_ids": "TRV devices"
+        },
+        "data_description": {
+          "member_ids": "Select one or more TRVs. Each TRV's individual climate entity will be hidden once added to a group."
+        }
+      },
+      "create_group_sensors": {
+        "title": "Create Room Group \u2014 Step 3 of 4",
+        "description": "{room_name} \u2014 {member_count} TRV(s) selected.\n\nOptionally add extra temperature sensors (e.g. a room sensor separate from the TRVs).",
+        "data": {
+          "temp_sensors": "Extra temperature sensors (optional)"
+        }
+      },
+      "edit_group": {
+        "title": "Edit Room Group \u2014 Step 1 of 2",
+        "description": "Select the group to edit.",
+        "data": {
+          "room_name": "Room group"
+        }
+      },
+      "edit_group_members": {
+        "title": "Edit Room Group \u2014 Step 2 of 2",
+        "description": "Editing: {room_name}",
+        "data": {
+          "member_ids": "Members"
+        }
+      },
+      "set_schedule": {
+        "title": "Set Schedule \u2014 Step 1 of 2",
+        "description": "Select the group to schedule.",
+        "data": {
+          "room_name": "Room group"
+        }
+      },
+      "set_schedule_preset": {
+        "title": "Set Schedule \u2014 Step 2 of 2",
+        "description": "Room: {room_name}",
+        "data": {
+          "preset": "Schedule preset"
+        },
+        "data_description": {
+          "preset": "For custom slot schedules use the hive_trv_local.group_set_schedule service."
+        }
+      },
+      "remove_group": {
+        "title": "Remove Room Group",
+        "description": "Select the group to remove. Member TRVs will be restored as individual devices.",
+        "data": {
+          "room_name": "Room group to remove"
+        }
+      },
+      "create_group_frost": {
+        "title": "Create Room Group \u2014 Step 4 of 4",
+        "description": "{open_meteo}\n\nSet the outdoor temperature threshold below which frost protection activates.",
+        "data": {
+          "frost_weather_entity": "Open-Meteo weather entity",
+          "frost_temperature": "Frost protection threshold (\u00b0C)"
+        },
+        "data_description": {
+          "frost_weather_entity": "When outdoor temperature falls at or below the threshold, heating will activate automatically.",
+          "frost_temperature": "Frost protection kicks in when outdoor temperature reaches this value. Recommended: 2\u00b0C."
+        }
+      }
+    }
+  }
+}

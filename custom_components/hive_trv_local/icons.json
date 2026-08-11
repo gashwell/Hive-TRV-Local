@@ -1,0 +1,9 @@
+{
+  "services": {
+    "boost": "mdi:rocket-launch",
+    "end_boost": "mdi:stop-circle-outline",
+    "set_schedule": "mdi:calendar-clock",
+    "clear_schedule": "mdi:calendar-remove",
+    "advance_schedule": "mdi:calendar-arrow-right"
+  }
+}

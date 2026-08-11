@@ -1,20 +1,44 @@
-# Hive Local TRV
+# Hive TRV Local
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue)](https://www.home-assistant.io/)
-[![Release](https://img.shields.io/github/v/release/gashwell/Hive-TRV-Local)](https://github.com/gashwell/Hive-TRV-Local/releases)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub release](https://img.shields.io/github/release/gashwell/Hive-TRV-Local-v3.svg)](https://github.com/gashwell/Hive-TRV-Local-v3/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Local Home Assistant integration for **Hive UK7004240 / TRV001 radiator valves** via Zigbee2MQTT.
-No Hive cloud. No subscription. Full local control.
+Local control of Hive and Danfoss TRVs and Hive receivers (SLR1/SLR2) via Zigbee2MQTT.  
+No Hive cloud. No Hive hub. Fully local over MQTT.
+
+---
+
+## What it does
+
+- **Per-device entries** — add each TRV and receiver individually with its Z2M MQTT topic
+- **Room groups** — group TRVs into virtual room climate entities
+- **Boiler demand** — turns your receiver/boiler on when any group member calls for heat
+- **Schedules** — weekly heating schedules with comfort and eco presets
+- **Boost** — timed boost per device or per room group
+- **Lovelace cards** — auto-registered cards for individual TRVs and room groups
+- **Entity suppression** — when a TRV joins a group its individual climate entity is hidden; restore it by removing from the group
+
+---
+
+## Supported devices
+
+| Device | Type | Z2M model |
+|---|---|---|
+| Hive Radiator Valve | TRV | UK7004240 |
+| Hive SLR1 / SLR1b / SLR1c / SLR1d | Receiver (single channel) | SLR1 |
+| Hive SLR2 / SLR2b / SLR2c / SLR2d | Receiver (dual channel — heating + hot water) | SLR2 |
+| Hive OTR1 | Receiver (standalone) | OTR1 |
+
+Note: The Hive SLT thermostat (SLT6 etc.) exposes only a battery sensor in Z2M — it has no climate entity and does not need to be added to this integration.
 
 ---
 
 ## Requirements
 
-- Home Assistant 2024.1 or newer
-- Zigbee2MQTT with your TRVs already paired
-- MQTT broker (Mosquitto add-on or external)
-- The HA **MQTT** integration configured
+- Home Assistant 2024.1.0 or later
+- Zigbee2MQTT running and connected to HA via the MQTT integration
+- Hive TRVs and/or receivers paired to Zigbee2MQTT
 
 ---
 
@@ -22,183 +46,205 @@ No Hive cloud. No subscription. Full local control.
 
 ### Via HACS (recommended)
 
-1. HACS → Integrations → ⋮ → **Custom repositories**
-2. Add `https://github.com/gashwell/Hive-TRV-Local` — type **Integration**
-3. Install **Hive Local TRV** and restart Home Assistant
+1. Open HACS in HA
+2. Click **⋮ → Custom repositories**
+3. Add `https://github.com/gashwell/Hive-TRV-Local-v3` — category: **Integration**
+4. Click **Download**
+5. Restart Home Assistant
 
 ### Manual
 
-Copy `custom_components/hive_local_trv/` into your HA `config/custom_components/` directory and restart.
+Copy the `custom_components/hive_trv_local` folder into your HA `config/custom_components/` directory and restart.
 
 ---
 
 ## Setup
 
-**Settings → Integrations → Add Integration → Hive Local TRV**
+### Step 1 — Add your TRVs
 
-Enter your Zigbee2MQTT base topic (default: `zigbee2mqtt`). TRVs appear automatically within 30 seconds as Z2M publishes device data. No need to list device names.
+**Settings → Devices & Services → Add Integration → Hive TRV Local → Add a TRV**
+
+Enter:
+- **Device name** — a friendly name, e.g. `Living Room TRV`
+- **Z2M MQTT topic** — the full topic from Zigbee2MQTT, e.g. `zigbee2mqtt/Living Room TRV`
+
+Repeat for every TRV. Each creates its own device entry with:
+- `climate.*` — individual TRV climate entity
+- `sensor.*` — battery and heating demand
+- `number.*` — boost temperature, boost duration, frost protection
+
+### Step 2 — Add your receiver (if applicable)
+
+**Add Integration → Add a receiver**
+
+Enter:
+- **Device name** — e.g. `Hive Receiver`
+- **Z2M MQTT topic** — e.g. `zigbee2mqtt/Hive Receiver`
+- **Model** — SLR1 (single channel), SLR2 (dual channel — adds hot water control), OTR1
+
+SLR2 creates an additional water mode select entity and water boost button.
+
+### Step 3 — Set up the room group manager (once)
+
+**Add Integration → Set up room group manager**
+
+This creates a single group manager entry. Only do this once.
+
+### Step 4 — Create room groups
+
+**Room Groups → Configure → Manage room groups → Create a new room group**
+
+1. Enter a room name
+2. Select TRVs from the picker — only your registered TRVs appear, only those not already in a group
+3. Optionally add extra temperature sensors
+4. Done — a group climate entity is created and the individual TRV climate entities are hidden
+
+### Step 5 — Configure the group manager
+
+**Room Groups → Configure → Settings**
+
+- **Boiler / receiver entity** — set this to your receiver's climate entity (or a switch/input_boolean). It will be turned on when any group member calls for heat.
 
 ---
 
-## Configuration
+## Room groups
 
-**Settings → Integrations → Hive Local TRV → Configure**
+Each room group creates:
+- `climate.*` — virtual group climate entity (average temperature, fan-out commands)
+- `button.*` — Boost and End Boost buttons
+- `number.*` — default boost temperature and duration
 
-The Configure menu has two sections:
+### Group modes
 
-### Device settings
-
-| Option | Description |
+| Mode | Description |
 |---|---|
-| Boiler / receiver entity | HA entity turned on/off based on aggregate TRV heat demand. Supports `climate`, `switch`, and `input_boolean`. |
-| People to track for geofencing | When all selected people leave home, all TRVs drop to frost protection automatically. |
-| Enable diagnostic logging | Writes `HIVE_DIAG` entries to the HA log at WARNING level. Search for `HIVE_DIAG` in Settings → System → Logs → Load Full Log. |
+| Manual | Set a target temperature directly |
+| Schedule | Follow a weekly time/temperature schedule |
+| Boost | Timed boost at a set temperature, returns to previous mode when finished |
+| Off | Turn all members off |
 
-### Manage room groups
+### Entity suppression
 
-Room groups let you control multiple TRVs together as a single climate entity. The group shows the average temperature across all its members and fans out all commands (mode, temperature, boost, schedule) to every member simultaneously.
+When a TRV is added to a group its individual `climate.*` entity is hidden automatically. This keeps dashboards clean — you control the TRV through the group card.
 
-**When a TRV is added to a group its individual climate entity is removed from the main page.** Its sensor entities (battery, temperature, heating demand) remain visible under the TRV's own device card so you can still see per-device readings.
-
-#### Create a room group (3 steps)
-
-1. **Name** — enter a room name, e.g. `Living Room`
-2. **Devices** — pick from a dropdown of all discovered TRVs. Only devices not already in another group are shown. Each device can belong to only one group.
-3. **Extra temperature sensors** (optional) — additional HA temperature sensor entities to include in the room average
-
-A new `climate.living_room` entity appears immediately — no restart required.
-
-#### Edit a room group (2 steps)
-
-1. **Select group** — pick from existing groups
-2. **Members** — current members are pre-ticked. Tick ungrouped TRVs to add them. Untick current members to remove them.
-
-Changes take effect immediately. Removed members regain their individual climate entities. Added members have their individual climate entities suppressed.
-
-#### Remove a room group
-
-Select from a dropdown of existing groups. All members regain their individual climate entities immediately.
+Remove the TRV from the group and the individual entity is immediately restored, no restart required.
 
 ---
 
-## Entities created
+## Lovelace cards
 
-### Per TRV (ungrouped)
+Both cards are auto-registered when the integration loads — no manual resource setup needed.
 
-| Platform | Entity | Notes |
-|---|---|---|
-| `climate` | Main control | Temperature, mode, presets. Hidden when TRV is in a group. |
-| `sensor` | Battery | Always visible — even when grouped |
-| `sensor` | Heating demand | PI demand 0–100%. Always visible. |
-| `number` | Setpoint offset | ±2.5 °C calibration |
-| `number` | Boost temperature | Default boost target |
-| `number` | Boost duration | Default boost duration (minutes) |
-| `select` | Keypad lock | unlock / lock1 / lock2 |
-| `button` | Run adaptation | Valve calibration routine |
-| `button` | Enter mounting mode | For valve re-installation |
+### Individual TRV card (`custom:hive-trv-card`)
 
-### Per room group
+```yaml
+type: custom:hive-trv-card
+entity: climate.living_room_trv
+battery_entity: sensor.living_room_trv_battery           # optional
+demand_entity: sensor.living_room_trv_pi_heating_demand  # optional
+```
 
-| Platform | Entity | Notes |
-|---|---|---|
-| `climate` | Group control | Average temperature; commands fan out to all members |
+Features: current temperature, target temperature, mode selector (Manual/Schedule/Boost/Off), boost panel with temperature and duration sliders, schedule slot view, battery bar, heating demand bar, signal strength, valve orientation, window open toggle, frost protect.
 
-The group climate entity's `extra_state_attributes` include `members` (list of TRV names), `member_count`, and when boosting, `boost_ends` and `boost_remaining_minutes`.
+### Room group card (`custom:hive-trv-group-card`)
 
----
+```yaml
+type: custom:hive-trv-group-card
+entity: climate.living_room
+```
 
-## Climate modes
+Features: average temperature, group target temperature, mode selector, schedule view with current slot highlighted, heating demand bar, per-member temperature breakdown.
 
-| Mode | Behaviour |
-|---|---|
-| `manual` | Hold a fixed setpoint indefinitely |
-| `schedule` | HA manages a weekly schedule and pushes setpoints |
-| `boost` | Timed override at a configurable temperature; previous mode restores on expiry |
-| HVAC off | Drops to frost protection temperature (7 °C default) |
-
-All modes work identically on individual TRV entities and room group entities.
+Both cards appear automatically in the HA 2026.6+ entity-based card picker when you add a card from a TRV or group entity page.
 
 ---
 
 ## Services
 
-### TRV / room group services
+### Group services
 
 | Service | Description |
 |---|---|
-| `hive_local_trv.boost` | Start a timed boost on a TRV or room group |
-| `hive_local_trv.end_boost` | Cancel an active boost |
-| `hive_local_trv.set_schedule` | Set a weekly heating schedule |
-| `hive_local_trv.clear_schedule` | Remove the schedule |
-| `hive_local_trv.advance_schedule` | Skip to the next scheduled slot immediately |
+| `hive_trv_local.group_boost` | Start a timed boost on a room group |
+| `hive_trv_local.group_end_boost` | Cancel an active boost |
+| `hive_trv_local.group_set_schedule` | Set a custom weekly schedule |
+| `hive_trv_local.group_clear_schedule` | Remove the schedule (returns to manual) |
+| `hive_trv_local.group_advance_schedule` | Skip immediately to the next scheduled slot |
 
-### Whole-home services
-
-| Service | Description |
-|---|---|
-| `hive_local_trv.set_holiday` | Frost protection for a date range; all TRVs restore automatically on return |
-| `hive_local_trv.cancel_holiday` | Cancel an active or pending holiday |
-
-### Room group services (alternative to UI)
-
-| Service | Description |
-|---|---|
-| `hive_local_trv.add_room` | Create a room group via service call |
-| `hive_local_trv.remove_room` | Remove a room group via service call |
-
----
-
-## Schedule format
-
-Schedules are set via the `set_schedule` service on either a TRV or a room group entity. Each slot needs `days` (0 = Monday, 6 = Sunday), `time` (HH:MM), and `temperature` (°C):
+### Schedule format
 
 ```yaml
-service: hive_local_trv.set_schedule
+service: hive_trv_local.group_set_schedule
 data:
   entity_id: climate.living_room
   schedule:
-    - days: [0, 1, 2, 3, 4]
+    - days: [0, 1, 2, 3, 4]   # 0=Mon, 6=Sun
       time: "06:30"
       temperature: 21.0
     - days: [0, 1, 2, 3, 4]
       time: "09:00"
       temperature: 18.0
-    - days: [0, 1, 2, 3, 4]
-      time: "17:00"
-      temperature: 21.0
-    - days: [0, 1, 2, 3, 4]
-      time: "22:00"
-      temperature: 16.0
     - days: [5, 6]
       time: "08:00"
       temperature: 21.0
-    - days: [5, 6]
-      time: "23:00"
-      temperature: 16.0
 ```
-
-When applied to a room group entity the schedule is fanned out to all member TRVs.
 
 ---
 
-## Updates via HACS
+## Logging
 
-Update in HACS, then **restart Home Assistant**. Existing configuration and room groups are preserved automatically — no need to remove and re-add the integration.
+Info-level events (device setup, room creation, boiler demand changes, boost start/end) appear in HA logs without any configuration.
+
+For full debug output add to `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.hive_trv_local: debug
+```
 
 ---
 
 ## Troubleshooting
 
-**TRVs not appearing** — check Z2M is running and publishing to the correct base topic. TRVs appear within 30 seconds of Z2M publishing its device list.
+**TRV not responding to commands**
+- Check the Z2M MQTT topic in the device settings exactly matches what Z2M shows in its device list
+- Check the MQTT integration is connected and Z2M is running
+- Check the HA log for `custom_components.hive_trv_local` entries
 
-**My TRV climate entity has disappeared** — it is in a room group. The group climate entity (`climate.room_name`) is the control point. Individual sensor entities remain visible under the TRV device card.
+**Room group climate entity unavailable**
+- At least one member TRV must have reported state to Z2M since HA started
+- Check that the TRV's individual entity exists and has a state in Developer Tools → States
 
-**Room group devices not available in dropdown** — a device already in a group will not appear. Edit the group it belongs to and remove it first.
+**Configure button not showing**
+- The integration entry must be fully loaded — check Settings → System → Logs for errors
+- If upgrading from a previous version, delete all old entries first and re-add
 
-**Diagnostic logging** — enable via Configure → Device settings → Enable diagnostic logging. Search for `HIVE_DIAG` in Settings → System → Logs → Load Full Log.
+**HACS shows "no information"**
+- HACS → ⋮ → Reload data, then try again
 
 ---
 
-## License
+## Version history
 
-MIT
+See [CHANGELOG.md](CHANGELOG.md) for full release notes.
+
+| Version | Summary |
+|---|---|
+| 4.0.0 | Complete rewrite — per-device entries, entity suppression, receiver support |
+| 3.1.x | MQTT topic-based member selection (superseded) |
+| 2.0.x | Z2M entity detection attempts (superseded) |
+
+---
+
+## Credits
+
+Receiver MQTT coordinator adapted from [andrew-codechimp/HA-Hive-Local-Thermostat](https://github.com/andrew-codechimp/HA-Hive-Local-Thermostat) (MIT licence).  
+See [NOTICE](NOTICE) for full attribution.
+
+---
+
+## Licence
+
+MIT — see [LICENSE](LICENSE) for details.

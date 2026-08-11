@@ -1,0 +1,13 @@
+Hive TRV Local v3 incorporates code from:
+
+climate_group_helper
+  Copyright (c) bjrnptrsn
+  MIT Licence
+  https://github.com/bjrnptrsn/climate_group_helper
+
+The core climate group engine (climate.py, state.py, sync_mode.py,
+calibration.py, schedule.py, window_control.py, override.py, isolation.py,
+presence.py, service_call.py, sensor.py, switch.py, number.py,
+member_template.py, meta_processor.py, status.py, diagnostics.py)
+is derived from climate_group_helper with domain renaming and
+Hive-specific extensions.
