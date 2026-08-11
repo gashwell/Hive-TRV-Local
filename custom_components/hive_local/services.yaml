@@ -1,0 +1,70 @@
+room_boost:
+  name: Room Boost
+  description: Start a timed boost on a heating room.
+  fields:
+    entity_id:
+      name: Room entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_local
+    temperature:
+      name: Temperature
+      selector:
+        number:
+          min: 5
+          max: 32
+          step: 0.5
+          unit_of_measurement: "°C"
+    duration_minutes:
+      name: Duration
+      selector:
+        number:
+          min: 1
+          max: 360
+          step: 5
+          unit_of_measurement: min
+
+room_end_boost:
+  name: End Room Boost
+  description: Cancel active boost on a heating room.
+  fields:
+    entity_id:
+      name: Room entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_local
+
+room_set_schedule:
+  name: Set Room Schedule
+  description: Set a weekly heating schedule for a room.
+  fields:
+    entity_id:
+      name: Room entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_local
+    schedule:
+      name: Schedule
+      required: true
+      description: List of slots — days (0=Mon,6=Sun), time (HH:MM), temperature.
+      example: '[{"days":[0,1,2,3,4],"time":"07:00","temperature":21.0}]'
+      selector:
+        object:
+
+room_clear_schedule:
+  name: Clear Room Schedule
+  description: Remove the schedule from a room (returns to manual mode).
+  fields:
+    entity_id:
+      name: Room entity
+      required: true
+      selector:
+        entity:
+          domain: climate
+          integration: hive_local
