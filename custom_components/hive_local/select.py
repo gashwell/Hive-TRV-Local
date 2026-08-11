@@ -47,6 +47,12 @@ _SELECTS: list[dict] = [
         "name":    "Programming Mode",
         "uid_sfx": "programming_mode",
         "options": ["setpoint", "schedule", "schedule_with_preheat", "eco"],
+        "option_labels": {
+            "setpoint":             "Manual",
+            "schedule":             "Schedule",
+            "schedule_with_preheat":"Schedule with pre-heat",
+            "eco":                  "Eco",
+        },
         "icon":    "mdi:calendar-clock",
         "cat":     EntityCategory.CONFIG,
         "setter":  "async_set_programming_operation_mode",
@@ -113,15 +119,19 @@ class HiveTRVSelect(SelectEntity):
         mqtt: HiveDeviceMqtt,
         spec: dict,
     ) -> None:
-        self._device_id   = device_id
-        self._device_data = device_data
-        self._mqtt        = mqtt
-        self._spec        = spec
+        self._device_id    = device_id
+        self._device_data  = device_data
+        self._mqtt         = mqtt
+        self._spec         = spec
+        self._option_labels: dict[str, str] = spec.get("option_labels", {})
 
-        self._attr_unique_id    = uid_device(device_id, spec["uid_sfx"])
-        self._attr_name         = f"{device_data.get('name', device_id)} {spec['name']}"
-        self._attr_options      = spec["options"]
-        self._attr_icon         = spec.get("icon")
+        self._attr_unique_id       = uid_device(device_id, spec["uid_sfx"])
+        self._attr_name            = f"{device_data.get('name', device_id)} {spec['name']}"
+        # Use friendly labels if provided, otherwise use raw Z2M values
+        self._attr_options         = [
+            self._option_labels.get(o, o) for o in spec["options"]
+        ]
+        self._attr_icon            = spec.get("icon")
         self._attr_entity_category = spec.get("cat")
 
     @property
@@ -145,8 +155,15 @@ class HiveTRVSelect(SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        return getattr(self._mqtt, self._spec["key"], None)
+        raw = getattr(self._mqtt, self._spec["key"], None)
+        if raw is None:
+            return None
+        # Return the friendly label if we have one, else the raw Z2M value
+        return self._option_labels.get(raw, raw)
 
     async def async_select_option(self, option: str) -> None:
+        # Reverse-map friendly label back to Z2M value before publishing
+        reverse = {v: k for k, v in self._option_labels.items()}
+        z2m_value = reverse.get(option, option)
         setter = getattr(self._mqtt, self._spec["setter"])
-        await setter(option)
+        await setter(z2m_value)
