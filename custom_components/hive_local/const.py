@@ -11,6 +11,9 @@ PLATFORMS = ["climate", "sensor", "number", "button"]
 CONF_Z2M_BASE_TOPIC   = "z2m_base_topic"
 CONF_BOILER_ENTITY    = "boiler_entity"
 CONF_ENABLE_DIAG      = "enable_diagnostics"
+CONF_FROST_ENABLED    = "frost_protection_enabled"
+CONF_FROST_TEMP       = "frost_protection_temp"
+CONF_FROST_WEATHER    = "frost_protection_weather_entity"
 
 # ── Device type keys (stored per device in hass.data) ─────────────────────────
 DEVICE_TYPE_TRV       = "trv"

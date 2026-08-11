@@ -52,6 +52,12 @@ class HiveLocalCoordinator:
         self._unsub_boiler:   list = []
         self._listeners:      list = []
 
+        # Global frost protection (Open-Meteo — fires boiler independently of rooms)
+        self._frost_enabled:  bool       = False
+        self._frost_threshold:float      = 2.0
+        self._frost_weather:  str | None = None
+        self._frost_active:   bool       = False
+
     # ── Accessors ──────────────────────────────────────────────────────────────
 
     def get_device_mqtt(self, device_id: str) -> HiveDeviceMqtt | None:
@@ -255,7 +261,21 @@ class HiveLocalCoordinator:
     async def _evaluate_boiler(self) -> None:
         if not self.boiler_entity:
             return
-        needed = any(room.heat_required for room in self._rooms.values())
+        # Boiler fires if any room needs heat OR global frost protection triggers
+        room_demand   = any(room.heat_required for room in self._rooms.values())
+        frost_trigger = self.check_frost_protection()
+        needed = room_demand or frost_trigger
+
+        if frost_trigger and not self._frost_active:
+            self._frost_active = True
+            _LOGGER.info(
+                "Global frost protection active — firing boiler (outdoor ≤ %.1f°C)",
+                self._frost_threshold,
+            )
+        elif not frost_trigger and self._frost_active:
+            self._frost_active = False
+            _LOGGER.info("Global frost protection cleared")
+
         if needed == self._boiler_demand:
             return
         self._boiler_demand = needed
@@ -275,6 +295,34 @@ class HiveLocalCoordinator:
 
     def update_boiler_entity(self, entity_id: str | None) -> None:
         self.boiler_entity = entity_id
+
+    def update_frost_protection(
+        self,
+        enabled: bool,
+        threshold: float,
+        weather_entity: str | None,
+    ) -> None:
+        """Update global frost protection settings (from Open-Meteo)."""
+        self._frost_enabled   = enabled
+        self._frost_threshold = threshold
+        self._frost_weather   = weather_entity
+        _LOGGER.info(
+            "Global frost protection: enabled=%s threshold=%.1f°C entity=%s",
+            enabled, threshold, weather_entity,
+        )
+
+    def check_frost_protection(self) -> bool:
+        """Return True if outdoor temp is at or below frost threshold."""
+        if not self._frost_enabled or not self._frost_weather:
+            return False
+        state = self.hass.states.get(self._frost_weather)
+        if not state:
+            return False
+        try:
+            outdoor = float(state.attributes.get("temperature", 99))
+            return outdoor <= self._frost_threshold
+        except (TypeError, ValueError):
+            return False
 
     # ── Entity registry — hide/restore TRV climate entities ───────────────────
 

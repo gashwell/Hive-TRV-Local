@@ -11,7 +11,9 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ATTR_DURATION_MINUTES, ATTR_SCHEDULE, ATTR_TEMPERATURE,
-    CONF_BOILER_ENTITY, CONF_Z2M_BASE_TOPIC, DATA_COORDINATOR, DATA_STORE,
+    CONF_BOILER_ENTITY, CONF_ENABLE_DIAG,
+    CONF_FROST_ENABLED, CONF_FROST_TEMP, CONF_FROST_WEATHER,
+    CONF_Z2M_BASE_TOPIC, DATA_COORDINATOR, DATA_STORE,
     DEFAULT_BOOST_MINUTES, DEFAULT_BOOST_TEMP, DOMAIN, PLATFORMS,
     SVC_DEVICE_BOOST, SVC_DEVICE_END_BOOST,
     SVC_ROOM_BOOST, SVC_ROOM_CLEAR_SCHEDULE,
@@ -64,6 +66,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await coordinator.async_setup()
+
+    # Apply global frost protection settings if configured
+    if merged.get(CONF_FROST_ENABLED) and merged.get(CONF_FROST_WEATHER):
+        coordinator.update_frost_protection(
+            enabled        = True,
+            threshold      = float(merged.get(CONF_FROST_TEMP, 2.0)),
+            weather_entity = merged.get(CONF_FROST_WEATHER),
+        )
 
     # Start Z2M bridge device auto-discovery
     from .discovery import HiveDiscovery

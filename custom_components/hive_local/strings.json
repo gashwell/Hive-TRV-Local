@@ -25,13 +25,18 @@
       },
       "settings": {
         "title": "Settings",
+        "description": "{frost_hint}",
         "data": {
           "z2m_base_topic": "Zigbee2MQTT base topic",
           "boiler_entity": "Boiler / receiver entity",
+          "frost_protection_enabled": "Enable boiler frost protection (Open-Meteo)",
+          "frost_protection_temp": "Frost threshold (\u00b0C)",
           "enable_diagnostics": "Enable diagnostic logging"
         },
         "data_description": {
-          "boiler_entity": "Turned on when any room calls for heat, off when all rooms are satisfied."
+          "boiler_entity": "Turned on when any room calls for heat, off when all rooms are satisfied.",
+          "frost_protection_enabled": "Fires the boiler when outdoor temperature falls to or below the threshold. Individual TRV frost protection is separate.",
+          "frost_protection_temp": "Boiler activates when outdoor temperature reaches this value. Default: 2\u00b0C."
         }
       },
       "manage_devices": {
@@ -120,7 +125,7 @@
         }
       },
       "room_sensors": {
-        "title": "Create Room \u2014 Step 3 of 4",
+        "title": "Create Room \u2014 Step 3 of 3",
         "description": "{hint}",
         "data": {
           "sensor_ids": "Extra temperature sensors (optional)"
@@ -149,18 +154,6 @@
         "description": "Select the room to remove. All member TRVs will be restored as individual devices.",
         "data": {
           "room_id": "Room"
-        }
-      },
-      "room_frost": {
-        "title": "Create Room \u2014 Step 4 of 4",
-        "description": "{hint}",
-        "data": {
-          "frost_enabled": "Enable frost protection",
-          "frost_temperature": "Frost threshold (\u00b0C)"
-        },
-        "data_description": {
-          "frost_enabled": "When enabled, the room will automatically heat when outdoor temperature reaches the threshold.",
-          "frost_temperature": "Heating activates when outdoor temperature is at or below this value. Recommended: 2\u00b0C."
         }
       }
     }
