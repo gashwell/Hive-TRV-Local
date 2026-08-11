@@ -122,8 +122,17 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         ]
 
     def _discovered_z2m_topics(self) -> dict[str, str]:
-        """Return {topic: label} for Z2M MQTT climate entities not already registered."""
+        """Return {topic: label} for Z2M MQTT climate entities not already registered.
+
+        Label priority:
+        1. Device name from the device registry (set by Z2M from friendly_name)
+        2. Entity name from entity registry
+        3. Last segment of the MQTT topic (e.g. "Living Room TRV")
+        """
+        from homeassistant.helpers import device_registry as dr
         ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+
         existing_topics = {
             d.get("mqtt_topic", "")
             for d in self._all_devices().values()
@@ -141,8 +150,21 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             topic = uid
             if topic in existing_topics:
                 continue
-            name = entry.name or entry.original_name or topic.split("/")[-1]
-            result[topic] = f"{name} ({topic})"
+
+            # Get the Z2M friendly name from the device registry
+            friendly = ""
+            if entry.device_id:
+                device = dev_reg.async_get(entry.device_id)
+                if device:
+                    friendly = device.name_by_user or device.name or ""
+
+            # Fall back to entity name, then topic segment
+            if not friendly:
+                friendly = entry.name or entry.original_name or ""
+            if not friendly:
+                friendly = topic.split("/")[-1] if "/" in topic else topic
+
+            result[topic] = friendly
         return result
 
     def _no_rooms_result(self) -> config_entries.FlowResult:
