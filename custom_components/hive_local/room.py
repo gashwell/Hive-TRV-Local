@@ -76,6 +76,9 @@ class HiveRoom:
         self._weather_entity: str | None = weather_entity
         self._frost_enabled:  bool      = frost_enabled
 
+        # Receiver — device_id of the registered receiver this room controls
+        self.receiver_device_id: str | None = None
+
         # Listeners (notify HA entities of state change)
         self._listeners: list = []
 
@@ -138,9 +141,11 @@ class HiveRoom:
 
     @property
     def heat_required(self) -> bool:
-        """True if any member TRV is actively calling for heat."""
+        """True if any member TRV is actively calling for heat, or if room is boosting."""
         if self._mode == MODE_OFF:
             return False
+        if self._mode == MODE_BOOST:
+            return True
         for device_id in self.device_ids:
             mqtt = self.coordinator.get_device_mqtt(device_id)
             if mqtt and mqtt.running_state == "heat":

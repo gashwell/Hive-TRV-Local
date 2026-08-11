@@ -49,6 +49,7 @@ class HiveLocalCoordinator:
         self._rooms:   dict[str, HiveRoom]        = {}   # room_id   → room
 
         self._boiler_demand:  bool = False
+        self._receiver_demand_state: dict[str, bool] = {}  # receiver_id → last demand
         self._unsub_boiler:   list = []
         self._listeners:      list = []
 
@@ -237,6 +238,7 @@ class HiveLocalCoordinator:
             weather_entity = room_data.get("weather_entity"),
             frost_enabled  = bool(room_data.get("frost_enabled", False)),
         )
+        room.receiver_device_id = room_data.get("receiver_device_id")
         room.add_listener(self._on_room_state_change)
         await room.async_setup()
         self._rooms[room_id] = room
@@ -259,23 +261,64 @@ class HiveLocalCoordinator:
         self._notify()
 
     async def _evaluate_boiler(self) -> None:
-        if not self.boiler_entity:
-            return
-        # Boiler fires if any room needs heat OR global frost protection triggers
-        room_demand   = any(room.heat_required for room in self._rooms.values())
+        """Evaluate heat demand and signal receivers.
+
+        Two demand paths:
+        1. Per-receiver demand — each room signals its assigned receiver directly
+           via MQTT. A receiver fires when any of its assigned rooms needs heat.
+        2. Global fallback boiler_entity — for non-Hive receivers (HA switch/climate).
+           Fires when ANY room needs heat (legacy path, still supported).
+        3. Global frost protection — fires all receivers when outdoor temp too low.
+        """
         frost_trigger = self.check_frost_protection()
-        needed = room_demand or frost_trigger
 
         if frost_trigger and not self._frost_active:
             self._frost_active = True
             _LOGGER.info(
-                "Global frost protection active — firing boiler (outdoor ≤ %.1f°C)",
+                "Global frost protection active — firing all receivers (outdoor ≤ %.1f°C)",
                 self._frost_threshold,
             )
         elif not frost_trigger and self._frost_active:
             self._frost_active = False
             _LOGGER.info("Global frost protection cleared")
 
+        # ── Per-receiver demand ────────────────────────────────────────────────
+        # Build {receiver_device_id: bool} — True if any assigned room needs heat
+        receiver_demand: dict[str, bool] = {}
+        for room in self._rooms.values():
+            if not room.receiver_device_id:
+                continue
+            rid = room.receiver_device_id
+            needed = room.heat_required or frost_trigger
+            receiver_demand[rid] = receiver_demand.get(rid, False) or needed
+
+        # Signal each receiver
+        for receiver_id, needed in receiver_demand.items():
+            mqtt = self._devices.get(receiver_id)
+            if not mqtt:
+                continue
+            prev = self._receiver_demand_state.get(receiver_id)
+            if prev == needed:
+                continue
+            self._receiver_demand_state[receiver_id] = needed
+            try:
+                if needed:
+                    temp = mqtt.target_temperature or 20.0
+                    await mqtt.async_set_mode_heat(temp)
+                else:
+                    await mqtt.async_set_mode_schedule()
+                _LOGGER.info(
+                    "Receiver %s → %s (demand from rooms)",
+                    mqtt.name, "HEAT" if needed else "SCHEDULE",
+                )
+            except Exception as exc:
+                _LOGGER.warning("Receiver demand failed for %s: %s", receiver_id, exc)
+
+        # ── Global fallback boiler_entity ──────────────────────────────────────
+        if not self.boiler_entity:
+            return
+        room_demand = any(room.heat_required for room in self._rooms.values())
+        needed = room_demand or frost_trigger
         if needed == self._boiler_demand:
             return
         self._boiler_demand = needed
@@ -288,13 +331,22 @@ class HiveLocalCoordinator:
                 blocking=False,
             )
             _LOGGER.info(
-                "Boiler → %s (%s)", "ON" if needed else "OFF", self.boiler_entity
+                "Boiler entity → %s (%s)", "ON" if needed else "OFF", self.boiler_entity
             )
         except Exception as exc:
             _LOGGER.warning("Boiler service call failed: %s", exc)
 
     def update_boiler_entity(self, entity_id: str | None) -> None:
         self.boiler_entity = entity_id
+
+    def assign_room_receiver(self, room_id: str, receiver_device_id: str | None) -> None:
+        """Assign a receiver device to a room for on-demand heat control."""
+        room = self._rooms.get(room_id)
+        if room:
+            room.receiver_device_id = receiver_device_id
+            _LOGGER.info(
+                "Room %s → receiver %s", room_id, receiver_device_id or "none"
+            )
 
     def update_frost_protection(
         self,

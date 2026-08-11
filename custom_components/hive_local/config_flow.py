@@ -213,6 +213,14 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                     return entry.entity_id
         return None
 
+    def _registered_receivers(self) -> dict[str, str]:
+        """Return {device_id: name} for all registered receiver devices."""
+        return {
+            did: dd.get("name", did)
+            for did, dd in self._all_devices().items()
+            if dd.get("type") == DEVICE_TYPE_RECEIVER
+        }
+
     def _no_rooms_result(self) -> config_entries.FlowResult:
         return self.async_create_entry(title="", data=self.config_entry.options or {})
 
@@ -640,7 +648,7 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         """Optionally pick standalone temperature sensors for this room."""
         if user_input is not None:
             self._room_sensors = user_input.get("sensor_ids") or []
-            return await self._do_create_room()
+            return await self.async_step_room_receiver()
 
         # Get registered sensor devices
         devices = self._all_devices()
@@ -676,15 +684,57 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             },
         )
 
+    async def async_step_room_receiver(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        """Step 4 of 4 — assign a receiver/boiler to this room (optional)."""
+        receivers = self._registered_receivers()
+
+        if user_input is not None:
+            self._room_receiver = user_input.get("receiver_device_id") or None
+            return await self._do_create_room()
+
+        if not receivers:
+            # No receivers registered — skip this step
+            self._room_receiver = None
+            return await self._do_create_room()
+
+        options = [selector.SelectOptionDict(value="", label="None (no receiver assigned)")]
+        options += [
+            selector.SelectOptionDict(value=did, label=name)
+            for did, name in sorted(receivers.items(), key=lambda x: x[1])
+        ]
+
+        return self.async_show_form(
+            step_id="room_receiver",
+            data_schema=vol.Schema({
+                vol.Optional("receiver_device_id", default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "room_name": self._room_name,
+                "hint": (
+                    "Select the receiver that controls heating for this room. "
+                    "When any TRV in this room calls for heat, the receiver will be "
+                    "told to heat. Leave as None if using the global boiler entity in Settings."
+                ),
+            },
+        )
+
     async def _do_create_room(self) -> config_entries.FlowResult:
         room_id   = str(uuid.uuid4())
         room_data = {
-            "name":         self._room_name,
-            "device_ids":   self._room_devs,
-            "sensor_ids":   self._room_sensors,
-            "schedule":     [],
-            "boost_temp":   22.0,
-            "boost_minutes":30,
+            "name":               self._room_name,
+            "device_ids":         self._room_devs,
+            "sensor_ids":         self._room_sensors,
+            "schedule":           [],
+            "boost_temp":         22.0,
+            "boost_minutes":      30,
+            "receiver_device_id": getattr(self, "_room_receiver", None),
         }
         c = self._coordinator()
         if c:
@@ -755,6 +805,14 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 c = self._coordinator()
                 if c:
                     await c.async_update_room(self._edit_room_id, new_devs, new_sens)
+                # Update receiver assignment
+                new_receiver = user_input.get("receiver_device_id") or None
+                rd2 = dict(store.get_room(self._edit_room_id) or {})
+                rd2["receiver_device_id"] = new_receiver
+                await store.async_save_room(self._edit_room_id, rd2)
+                if c:
+                    c.assign_room_receiver(self._edit_room_id, new_receiver)
+
                 # Update frost settings
                 frost_enabled = user_input.get("frost_enabled", False)
                 frost_temp    = float(user_input.get("frost_temperature", 2.0))
@@ -807,6 +865,24 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                     min=-10, max=10, step=0.5,
                     unit_of_measurement="°C",
                     mode=selector.NumberSelectorMode.SLIDER,
+                )
+            )
+
+        # Receiver selector
+        receivers = self._registered_receivers()
+        current_receiver = room_data.get("receiver_device_id", "")
+        if receivers:
+            recv_options = [selector.SelectOptionDict(value="", label="None")]
+            recv_options += [
+                selector.SelectOptionDict(value=did, label=name)
+                for did, name in sorted(receivers.items(), key=lambda x: x[1])
+            ]
+            schema[vol.Optional("receiver_device_id", default=current_receiver or "")] = (
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=recv_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
                 )
             )
 

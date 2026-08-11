@@ -125,7 +125,7 @@
         }
       },
       "room_sensors": {
-        "title": "Create Room \u2014 Step 3 of 3",
+        "title": "Create Room \u2014 Step 3 of 4",
         "description": "{hint}",
         "data": {
           "sensor_ids": "Extra temperature sensors (optional)"
@@ -146,7 +146,8 @@
         "description": "Editing: {room_name}",
         "data": {
           "device_ids": "TRVs",
-          "sensor_ids": "Extra temperature sensors"
+          "sensor_ids": "Extra temperature sensors",
+          "receiver_device_id": "Receiver / boiler"
         }
       },
       "remove_room": {
@@ -154,6 +155,16 @@
         "description": "Select the room to remove. All member TRVs will be restored as individual devices.",
         "data": {
           "room_id": "Room"
+        }
+      },
+      "room_receiver": {
+        "title": "Create Room \u2014 Step 4 of 4",
+        "description": "Assign a receiver to: {room_name}\n\n{hint}",
+        "data": {
+          "receiver_device_id": "Receiver / boiler"
+        },
+        "data_description": {
+          "receiver_device_id": "When any TRV in this room calls for heat, this receiver will be commanded to heat. Select None to use the global boiler entity configured in Settings."
         }
       }
     }
