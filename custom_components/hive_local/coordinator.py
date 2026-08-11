@@ -294,20 +294,36 @@ class HiveLocalCoordinator:
             needed = room.heat_required or frost_trigger
             receiver_demand[rid] = receiver_demand.get(rid, False) or needed
 
-        # From standalone TRVs (not in any room) with their own receiver assigned
+        # From individual TRVs with a receiver assigned directly.
+        # This covers:
+        #   - Standalone TRVs (not in any room)
+        #   - TRVs in a room whose room has no receiver assigned
+        #   - TRVs with their own receiver override
+        # The receiver does NOT need to be linked to a room — any TRV can fire
+        # it directly regardless of room membership.
         for device_id, device_data in self.store.get_all_devices().items():
             if device_data.get("type") != DEVICE_TYPE_TRV:
                 continue
             rid = device_data.get("receiver_device_id")
             if not rid:
-                continue
-            # Only fire if TRV is not in a room (rooms handle their own demand)
-            if self.store.room_for_device(device_id):
-                continue
+                # TRV has no direct receiver — check if its room has one
+                room_id = self.store.room_for_device(device_id)
+                if room_id:
+                    room = self._rooms.get(room_id)
+                    if room and room.receiver_device_id:
+                        rid = room.receiver_device_id
+                    else:
+                        continue
+                else:
+                    continue
             mqtt = self._devices.get(device_id)
             if not mqtt:
                 continue
-            trv_heating = mqtt.running_state == "heat" or mqtt.heat_required is True
+            trv_heating = (
+                mqtt.running_state == "heat"
+                or mqtt.heat_required is True
+                or mqtt.pi_heating_demand is not None and mqtt.pi_heating_demand > 0
+            )
             needed = trv_heating or frost_trigger
             receiver_demand[rid] = receiver_demand.get(rid, False) or needed
             if needed:
