@@ -5,7 +5,7 @@ DOMAIN    = "hive_local"
 VERSION   = "5.0.0"
 
 # ── Platforms ──────────────────────────────────────────────────────────────────
-PLATFORMS = ["climate", "sensor", "number", "button"]
+PLATFORMS = ["climate", "sensor", "number", "button", "select", "switch", "binary_sensor"]
 
 # ── Config entry keys ──────────────────────────────────────────────────────────
 CONF_Z2M_BASE_TOPIC   = "z2m_base_topic"

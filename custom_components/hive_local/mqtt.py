@@ -45,6 +45,52 @@ class HiveDeviceMqtt:
     pi_heating_demand:      int | None = None
     local_temp_calibration: float | None = None
 
+    # Orientation / display (TRV only, R/W)
+    thermostat_orientation: str | None = None   # "vertical" | "horizontal"
+    viewing_direction:      str | None = None   # "normal" | "upside-down"
+
+    # Keypad / lockout (TRV only, R/W)
+    keypad_lockout: str | None = None           # "unlock" | "lock"
+
+    # Window detection (TRV only)
+    window_open_feature:  bool | None = None    # R/W
+    window_open_internal: str | None  = None    # R only (enum)
+    window_open_external: bool | None = None    # R/W
+
+    # Heat flags (TRV only)
+    heat_available: bool | None = None          # R/W
+    heat_required:  bool | None = None          # R only
+
+    # Radiator / sensor mode (TRV only, R/W)
+    radiator_covered: bool | None = None
+
+    # Adaptation run (TRV only)
+    adaptation_run_status:   str | None  = None  # R only (enum)
+    adaptation_run_settings: bool | None = None  # R/W (auto night run)
+    adaptation_run_control:  str | None  = None  # R/W (enum)
+
+    # Programming (TRV only, R/W)
+    programming_operation_mode: str | None = None
+
+    # Setpoints / limits (TRV only)
+    regulation_setpoint_offset:  float | None = None   # R/W -2.5 to 2.5°C
+    max_heat_setpoint_limit:     float | None = None   # R/W 5–35°C
+    abs_max_heat_setpoint_limit: float | None = None   # R only
+
+    # Algorithm (TRV only)
+    algorithm_scale_factor: int | None = None         # R/W 1–10
+
+    # Mounted mode (TRV only)
+    mounted_mode_active:  bool | None = None           # R only
+    mounted_mode_control: bool | None = None           # R/W
+
+    # Preheat (TRV only, R only)
+    preheat_status: bool | None = None
+
+    # System diagnostics
+    system_status_code:     str | None = None          # R only
+    setpoint_change_source: str | None = None          # R only
+
     # Boost state
     heat_boost_active:      bool       = False
     heat_boost_remaining:   int        = 0
@@ -148,10 +194,10 @@ class HiveDeviceMqtt:
         self._notify()
 
     def _parse_trv(self, d: dict) -> None:
-        self.current_temperature = d.get("local_temperature")
-        self.target_temperature  = d.get("occupied_heating_setpoint") or d.get("current_heating_setpoint")
-        self.battery             = d.get("battery")
-        self.pi_heating_demand   = d.get("pi_heating_demand")
+        self.current_temperature    = d.get("local_temperature")
+        self.target_temperature     = d.get("occupied_heating_setpoint") or d.get("current_heating_setpoint")
+        self.battery                = d.get("battery")
+        self.pi_heating_demand      = d.get("pi_heating_demand")
         self.local_temp_calibration = d.get("local_temperature_calibration")
 
         rs = d.get("running_state", "idle")
@@ -170,6 +216,30 @@ class HiveDeviceMqtt:
             self.hvac_action = HVACAction.HEATING if self.running_state == "heat" else HVACAction.IDLE
             if self.heat_boost_active and sm != Z2M_BOOST_MODE:
                 self.heat_boost_active = False
+
+        # Extended attributes
+        self.thermostat_orientation     = d.get("thermostat_orientation")
+        self.viewing_direction          = d.get("viewing_direction")
+        self.keypad_lockout             = d.get("keypad_lockout")
+        self.window_open_feature        = d.get("window_open_feature")
+        self.window_open_internal       = d.get("window_open_internal")
+        self.window_open_external       = d.get("window_open_external")
+        self.heat_available             = d.get("heat_available")
+        self.heat_required              = d.get("heat_required")
+        self.radiator_covered           = d.get("radiator_covered")
+        self.adaptation_run_status      = d.get("adaptation_run_status")
+        self.adaptation_run_settings    = d.get("adaptation_run_settings")
+        self.adaptation_run_control     = d.get("adaptation_run_control")
+        self.programming_operation_mode = d.get("programming_operation_mode")
+        self.regulation_setpoint_offset = d.get("regulation_setpoint_offset")
+        self.max_heat_setpoint_limit    = d.get("max_heat_setpoint_limit")
+        self.abs_max_heat_setpoint_limit= d.get("abs_max_heat_setpoint_limit")
+        self.algorithm_scale_factor     = d.get("algorithm_scale_factor")
+        self.mounted_mode_active        = d.get("mounted_mode_active")
+        self.mounted_mode_control       = d.get("mounted_mode_control")
+        self.preheat_status             = d.get("preheat_status")
+        self.system_status_code         = d.get("system_status_code")
+        self.setpoint_change_source     = d.get("setpoint_change_source")
 
     def _parse_slr1(self, d: dict) -> None:
         self.current_temperature = d.get("local_temperature")
@@ -361,3 +431,53 @@ class HiveDeviceMqtt:
         else:
             await self.async_set_mode_off()
         _LOGGER.info("Boost ended on %s → returning to %s", self.name, self.pre_boost_mode)
+
+    # ── Extended TRV commands ──────────────────────────────────────────────────
+
+    async def async_set_thermostat_orientation(self, value: str) -> None:
+        """Set orientation: 'vertical' or 'horizontal'."""
+        await self._publish(f'{{"thermostat_orientation":"{value}"}}')
+
+    async def async_set_viewing_direction(self, value: str) -> None:
+        """Set display direction: 'normal' or 'upside-down'."""
+        await self._publish(f'{{"viewing_direction":"{value}"}}')
+
+    async def async_set_keypad_lockout(self, value: str) -> None:
+        """Set keypad lock: 'lock' or 'unlock'."""
+        await self._publish(f'{{"keypad_lockout":"{value}"}}')
+
+    async def async_set_window_open_feature(self, enabled: bool) -> None:
+        await self._publish(f'{{"window_open_feature":{str(enabled).lower()}}}')
+
+    async def async_set_window_open_external(self, open: bool) -> None:
+        await self._publish(f'{{"window_open_external":{str(open).lower()}}}')
+
+    async def async_set_heat_available(self, available: bool) -> None:
+        await self._publish(f'{{"heat_available":{str(available).lower()}}}')
+
+    async def async_set_radiator_covered(self, covered: bool) -> None:
+        await self._publish(f'{{"radiator_covered":{str(covered).lower()}}}')
+
+    async def async_set_adaptation_run_settings(self, enabled: bool) -> None:
+        await self._publish(f'{{"adaptation_run_settings":{str(enabled).lower()}}}')
+
+    async def async_set_adaptation_run_control(self, value: str) -> None:
+        """value: 'idle' | 'initiate_adaptation' | 'cancel_adaptation'."""
+        await self._publish(f'{{"adaptation_run_control":"{value}"}}')
+
+    async def async_set_programming_operation_mode(self, value: str) -> None:
+        """value: 'setpoint' | 'schedule' | 'schedule_with_preheat' | 'eco'."""
+        await self._publish(f'{{"programming_operation_mode":"{value}"}}')
+
+    async def async_set_regulation_setpoint_offset(self, value: float) -> None:
+        await self._publish(f'{{"regulation_setpoint_offset":{value}}}')
+
+    async def async_set_max_heat_setpoint_limit(self, value: float) -> None:
+        await self._publish(f'{{"max_heat_setpoint_limit":{value}}}')
+
+    async def async_set_algorithm_scale_factor(self, value: int) -> None:
+        await self._publish(f'{{"algorithm_scale_factor":{value}}}')
+
+    async def async_set_mounted_mode_control(self, mounting: bool) -> None:
+        """true = go to mounting mode, false = go to mounted mode."""
+        await self._publish(f'{{"mounted_mode_control":{str(mounting).lower()}}}')

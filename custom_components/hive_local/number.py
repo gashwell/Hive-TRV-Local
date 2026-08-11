@@ -37,6 +37,9 @@ async def async_setup_entry(
                     HiveDeviceBoostTempNumber(coordinator,     device_id, device_data),
                     HiveDeviceBoostDurationNumber(coordinator, device_id, device_data),
                     HiveDeviceFrostTempNumber(coordinator,     device_id, device_data),
+                    HiveRegulationOffsetNumber(coordinator,    device_id, device_data),
+                    HiveMaxSetpointLimitNumber(coordinator,    device_id, device_data),
+                    HiveAlgorithmScaleNumber(coordinator,      device_id, device_data),
                 ]
 
     for room_id, room in coordinator.all_rooms().items():
@@ -54,11 +57,18 @@ async def async_setup_entry(
         device_id   = event.data.get("device_id")
         device_data = event.data.get("data", {})
         if device_data.get("type") in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER):
-            async_add_entities([
+            new = [
                 HiveDeviceBoostTempNumber(coordinator,     device_id, device_data),
                 HiveDeviceBoostDurationNumber(coordinator, device_id, device_data),
                 HiveDeviceFrostTempNumber(coordinator,     device_id, device_data),
-            ])
+            ]
+            if device_data.get("type") == DEVICE_TYPE_TRV:
+                new += [
+                    HiveRegulationOffsetNumber(coordinator,    device_id, device_data),
+                    HiveMaxSetpointLimitNumber(coordinator,    device_id, device_data),
+                    HiveAlgorithmScaleNumber(coordinator,      device_id, device_data),
+                ]
+            async_add_entities(new)
 
     @callback
     def _on_room_added(event: Any) -> None:
@@ -204,6 +214,64 @@ class HiveRoomBoostTempNumber(NumberEntity):
         _, m = self._coordinator.store.get_room_boost_defaults(self._room_id)
         await self._coordinator.store.async_set_room_boost_defaults(self._room_id, value, m)
         self._room.update_boost_defaults(value, m)
+        self.async_write_ha_state()
+
+
+class HiveRegulationOffsetNumber(_HiveDeviceRestoreNumber):
+    """Regulation setpoint offset — calibration offset -2.5 to 2.5°C."""
+    _attr_native_min_value = -2.5
+    _attr_native_max_value =  2.5
+    _attr_native_step      =  0.1
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_icon             = "mdi:thermometer-chevron-up"
+    _coordinator_attr      = "regulation_setpoint_offset"
+    _default               = 0.0
+
+    def __init__(self, coordinator, device_id, device_data):
+        super().__init__(coordinator, device_id, device_data)
+        self._attr_unique_id = uid_device(device_id, "regulation_offset")
+        self._attr_name      = f"{device_data.get('name', device_id)} Temperature Calibration"
+        self._state          = self._default
+
+
+class HiveMaxSetpointLimitNumber(_HiveDeviceRestoreNumber):
+    """Maximum heat setpoint limit — upper bound for target temp."""
+    _attr_native_min_value = 5.0
+    _attr_native_max_value = 35.0
+    _attr_native_step      = 0.5
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_icon             = "mdi:thermometer-chevron-up"
+    _coordinator_attr      = "max_heat_setpoint_limit"
+    _default               = 32.0
+
+    def __init__(self, coordinator, device_id, device_data):
+        super().__init__(coordinator, device_id, device_data)
+        self._attr_unique_id = uid_device(device_id, "max_setpoint_limit")
+        self._attr_name      = f"{device_data.get('name', device_id)} Max Temperature Limit"
+        self._state          = self._default
+
+
+class HiveAlgorithmScaleNumber(_HiveDeviceRestoreNumber):
+    """Algorithm scale factor — 1=aggressive, 10=slow."""
+    _attr_native_min_value = 1
+    _attr_native_max_value = 10
+    _attr_native_step      = 1
+    _attr_native_unit_of_measurement = None
+    _attr_icon             = "mdi:speedometer"
+    _coordinator_attr      = "algorithm_scale_factor"
+    _default               = 5.0
+
+    def __init__(self, coordinator, device_id, device_data):
+        super().__init__(coordinator, device_id, device_data)
+        self._attr_unique_id = uid_device(device_id, "algorithm_scale_factor")
+        self._attr_name      = f"{device_data.get('name', device_id)} Control Aggressiveness"
+        self._state          = self._default
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._state = value
+        mqtt = self._coordinator.get_device_mqtt(self._device_id)
+        if mqtt:
+            await mqtt.async_set_algorithm_scale_factor(int(value))
         self.async_write_ha_state()
 
 
