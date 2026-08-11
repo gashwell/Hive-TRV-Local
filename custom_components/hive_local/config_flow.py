@@ -805,11 +805,15 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 c = self._coordinator()
                 if c:
                     await c.async_update_room(self._edit_room_id, new_devs, new_sens)
+                # Get store first — used for all updates below
+                store = self._store()
+
                 # Update receiver assignment
                 new_receiver = user_input.get("receiver_device_id") or None
-                rd2 = dict(store.get_room(self._edit_room_id) or {})
-                rd2["receiver_device_id"] = new_receiver
-                await store.async_save_room(self._edit_room_id, rd2)
+                if store:
+                    rd2 = dict(store.get_room(self._edit_room_id) or {})
+                    rd2["receiver_device_id"] = new_receiver
+                    await store.async_save_room(self._edit_room_id, rd2)
                 if c:
                     c.assign_room_receiver(self._edit_room_id, new_receiver)
 
@@ -817,7 +821,6 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 frost_enabled = user_input.get("frost_enabled", False)
                 frost_temp    = float(user_input.get("frost_temperature", 2.0))
                 weather_eid   = self._open_meteo_weather_entity()
-                store = self._store()
                 if store:
                     rd = dict(store.get_room(self._edit_room_id) or {})
                     rd["frost_enabled"]  = frost_enabled

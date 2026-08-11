@@ -33,7 +33,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
 
-    for card in ("hive-local-device-card.js", "hive-local-room-card.js"):
+    for card in ("hive-local-device-card.js", "hive-local-room-card.js", "hive-local-panel-card.js"):
         path = Path(__file__).parent / card
         if path.exists():
             url = f"/{DOMAIN}/{card}"
