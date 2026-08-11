@@ -9,13 +9,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DATA_COORDINATOR, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
     DOMAIN, uid_device,
 )
-from .coordinator import HiveLocalCoordinator
 from .coordinator import HiveLocalCoordinator
 from .mqtt import HiveDeviceMqtt
 
