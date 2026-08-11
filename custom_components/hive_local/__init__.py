@@ -65,6 +65,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await coordinator.async_setup()
 
+    # Start Z2M bridge device auto-discovery
+    from .discovery import HiveDiscovery
+    base_topic = merged.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
+    discovery  = HiveDiscovery(hass, coordinator, base_topic)
+    await discovery.async_setup()
+    hass.data[DOMAIN][entry.entry_id]["discovery"] = discovery
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Re-apply entity suppression for rooms that existed before this boot
@@ -81,6 +88,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         ed = hass.data[DOMAIN].pop(entry.entry_id, {})
+        if disc := ed.get("discovery"):
+            await disc.async_unload()
         c: HiveLocalCoordinator | None = ed.get(DATA_COORDINATOR)
         if c:
             await c.async_unload()
