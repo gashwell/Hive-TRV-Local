@@ -176,10 +176,9 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             if not friendly:
                 friendly = entry.name or entry.original_name or ""
 
-            # 4. Slug to title case from entity_id
+            # 4. Fall back to the raw HA entity_id
             if not friendly:
-                slug = entry.entity_id.replace("climate.", "")
-                friendly = slug.replace("_", " ").title()
+                friendly = entry.entity_id
 
             # ── Derive Z2M topic ─────────────────────────────────────────────
             # Z2M topic = base_topic/friendly_name
