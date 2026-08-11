@@ -36,7 +36,7 @@ DTPL.innerHTML = `
   .tdisp{text-align:center}
   .tdisp .lbl{font-size:11px;color:rgba(255,255,255,.7)}
   .tdisp .val{font-size:30px;font-weight:500;color:#fff;line-height:1;min-width:80px}
-  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1px;
     background:var(--divider-color,#e0e0e0);border-top:1px solid var(--divider-color,#e0e0e0)}
   .stat{padding:10px 12px;background:var(--ha-card-background,#fff)}
   .stat .lbl{font-size:10px;color:var(--secondary-text-color,#727272);margin-bottom:4px}
@@ -52,6 +52,10 @@ DTPL.innerHTML = `
   .abtn:hover{border-color:var(--primary-color,#03a9f4);color:var(--primary-color,#03a9f4)}
   .abtn.active{border-color:#dc2626;color:#dc2626}
   .unavail{padding:32px;text-align:center;color:var(--secondary-text-color,#727272);font-size:13px}
+  .demand-list{border-top:1px solid var(--divider-color,#e0e0e0);padding:8px 14px}
+  .demand-title{font-size:10px;color:var(--secondary-text-color,#727272);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+  .demand-row{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:var(--primary-text-color,#212121)}
+  .demand-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 </style>
 <div class="card">
   <div class="header" id="hdr">
@@ -72,6 +76,7 @@ DTPL.innerHTML = `
     </div>
   </div>
   <div class="stats" id="stats"></div>
+  <div class="demand-list" id="demandList" style="display:none"></div>
   <div class="actions">
     <button class="abtn" id="boostBtn">⚡ Boost</button>
     <button class="abtn" id="onoffBtn">⏻ Turn off</button>
@@ -167,39 +172,121 @@ class HiveLocalDeviceCard extends HTMLElement {
     const demand = demandEid ? this._hass.states[demandEid]?.state : attrs.pi_heating_demand;
     const boostRem = attrs.boost_remaining_minutes;
 
+    const heatRequired   = attrs.heat_required === true;
+    const receiverName   = attrs.receiver_name || null;
+    const heatDemandActive = attrs.heat_demand_active === true;
+    const demandedBy     = attrs.demanded_by || [];
+    const isReceiver     = attrs.running_state !== undefined
+                        && attrs.battery === undefined
+                        && attrs.pi_heating_demand === undefined;
+
     const stats = this.shadowRoot.getElementById('stats');
-    stats.innerHTML = [
-      bat != null ? {
-        lbl:'Battery',
-        val: `${Math.round(bat)}%`,
-        bar: Math.round(bat),
-        col: parseInt(bat) < 20 ? '#e53935' : '#22c55e',
-      } : null,
-      demand != null ? {
-        lbl:'Heating demand',
-        val: `${Math.round(demand)}%`,
-        bar: Math.round(demand),
-        col: '#e8632a',
-      } : null,
-      boostRem > 0 ? {
-        lbl:'Boost remaining',
-        val: `${boostRem} min`,
-        bar: null,
-        col: '#dc2626',
-      } : {
-        lbl:'Mode',
-        val: off ? 'Off' : (heating ? 'Heating' : 'Idle'),
-        bar: null,
-        col: col,
-      },
-    ].filter(Boolean).map(s => `
+
+    let statItems;
+    if (isReceiver) {
+      // Receiver card — show what's triggering it
+      statItems = [
+        {
+          lbl: 'Status',
+          val: off ? 'Off' : (heating ? 'Heating' : 'Idle'),
+          bar: null,
+          col: heating ? '#e8632a' : off ? '#9ca3af' : '#2563eb',
+        },
+        {
+          lbl: 'Heat source',
+          val: heatDemandActive
+            ? 'On-demand'
+            : heating
+              ? 'Schedule / manual'
+              : 'Idle',
+          bar: null,
+          col: heatDemandActive ? '#e8632a' : heating ? '#2563eb' : '#9ca3af',
+        },
+        {
+          lbl: 'Zones demanding',
+          val: `${demandedBy.length} zone${demandedBy.length !== 1 ? 's' : ''}`,
+          bar: null,
+          col: demandedBy.length > 0 ? '#e8632a' : '#9ca3af',
+        },
+        boostRem > 0 ? {
+          lbl: 'Boost remaining',
+          val: `${boostRem} min`,
+          bar: null,
+          col: '#dc2626',
+        } : null,
+      ].filter(Boolean);
+    } else {
+      // TRV card — show battery, demand, mode, on-demand link
+      statItems = [
+        bat != null ? {
+          lbl:'Battery',
+          val: `${Math.round(bat)}%`,
+          bar: Math.round(bat),
+          col: parseInt(bat) < 20 ? '#e53935' : '#22c55e',
+        } : null,
+        demand != null ? {
+          lbl:'Heating demand',
+          val: `${Math.round(demand)}%`,
+          bar: Math.round(demand),
+          col: '#e8632a',
+        } : null,
+        boostRem > 0 ? {
+          lbl:'Boost remaining',
+          val: `${boostRem} min`,
+          bar: null,
+          col: '#dc2626',
+        } : {
+          lbl:'Mode',
+          val: off ? 'Off' : (heating ? 'Heating' : 'Idle'),
+          bar: null,
+          col: col,
+        },
+        {
+          lbl: 'On-demand heating',
+          val: receiverName
+            ? (heatRequired ? `Firing → ${receiverName}` : `Ready → ${receiverName}`)
+            : 'Not configured',
+          bar: null,
+          col: heatRequired ? '#e8632a'
+            : receiverName ? '#2563eb'
+            : '#9ca3af',
+        },
+      ].filter(Boolean);
+    }
+
+    stats.innerHTML = statItems.map(s => `
       <div class="stat">
         <div class="lbl">${s.lbl}</div>
-        <div class="val" style="color:${s.col}">${s.val}</div>
+        <div class="val" style="color:${s.col};font-size:12px">${s.val}</div>
         ${s.bar != null
-          ? `<div class="bar"><div class="bar-fill" style="width:${s.bar}%;background:${s.col}"></div></div>`
+          ? `<div class="bar"><div class="bar-fill" style="width:${Math.min(s.bar,100)}%;background:${s.col}"></div></div>`
           : ''}
       </div>`).join('');
+
+    // Demand list — show individual TRVs/rooms calling for heat on receiver card
+    const demandList = this.shadowRoot.getElementById('demandList');
+    if (demandList) {
+      if (isReceiver && demandedBy.length > 0) {
+        demandList.style.display = '';
+        demandList.innerHTML = `
+          <div class="demand-title">Demanding heat</div>
+          ${demandedBy.map(name => `
+            <div class="demand-row">
+              <div class="demand-dot" style="background:#e8632a"></div>
+              ${name}
+            </div>`).join('')}`;
+      } else if (isReceiver && heating && !heatDemandActive) {
+        demandList.style.display = '';
+        demandList.innerHTML = `
+          <div class="demand-title">Demanding heat</div>
+          <div class="demand-row">
+            <div class="demand-dot" style="background:#6b7280"></div>
+            Running from own schedule or manual
+          </div>`;
+      } else {
+        demandList.style.display = 'none';
+      }
+    }
 
     // Boost button
     const boostBtn = this.shadowRoot.getElementById('boostBtn');

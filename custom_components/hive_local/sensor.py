@@ -16,6 +16,7 @@ from .const import (
     DOMAIN, uid_device,
 )
 from .coordinator import HiveLocalCoordinator
+from .coordinator import HiveLocalCoordinator
 from .mqtt import HiveDeviceMqtt
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ async def async_setup_entry(
             entities += [
                 HiveBatterySensor(device_id, device_data, mqtt),
                 HiveDemandSensor(device_id,  device_data, mqtt),
+                HiveOnDemandReceiverSensor(coordinator, device_id, device_data),
             ]
         elif dtype == DEVICE_TYPE_RECEIVER:
             entities += [HiveRunningStateSensor(device_id, device_data, mqtt)]
@@ -58,7 +60,8 @@ async def async_setup_entry(
         new: list = []
         if dtype == DEVICE_TYPE_TRV:
             new += [HiveBatterySensor(device_id, device_data, mqtt),
-                    HiveDemandSensor(device_id,  device_data, mqtt)]
+                    HiveDemandSensor(device_id,  device_data, mqtt),
+                    HiveOnDemandReceiverSensor(coordinator, device_id, device_data)]
         elif dtype == DEVICE_TYPE_RECEIVER:
             new += [HiveRunningStateSensor(device_id, device_data, mqtt)]
         if new:
@@ -137,3 +140,70 @@ class HiveRunningStateSensor(_HiveDeviceSensor):
     @property
     def native_value(self) -> str:
         return self._mqtt.running_state
+
+
+class HiveOnDemandReceiverSensor(SensorEntity):
+    """Shows which receiver this TRV fires for on-demand heating.
+
+    Visible on the TRV device page in Settings → Devices & Services.
+    Value is the receiver name, or 'Not configured' if none assigned.
+    """
+    _attr_icon            = "mdi:fire-circle"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HiveLocalCoordinator,
+        device_id: str,
+        device_data: dict,
+    ) -> None:
+        self._coordinator  = coordinator
+        self._device_id    = device_id
+        self._device_data  = device_data
+        self._attr_unique_id = uid_device(device_id, "on_demand_receiver")
+        self._attr_name      = f"{device_data.get('name', device_id)} On-demand receiver"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device_id)},
+            name=self._device_data.get("name", self._device_id),
+            manufacturer="Hive",
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Return receiver name or 'Not configured'."""
+        recv_id = self._coordinator.store.get_device_receiver(self._device_id)
+        if recv_id:
+            recv_data = self._coordinator.store.get_device(recv_id) or {}
+            return recv_data.get("name", recv_id)
+        # Also check if TRV is in a room that has a receiver
+        room_id = self._coordinator.store.room_for_device(self._device_id)
+        if room_id:
+            room_data = self._coordinator.store.get_room(room_id) or {}
+            recv_id   = room_data.get("receiver_device_id")
+            if recv_id:
+                recv_data = self._coordinator.store.get_device(recv_id) or {}
+                name = recv_data.get("name", recv_id)
+                return f"{name} (via room)"
+        return "Not configured"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs: dict = {}
+        recv_id = self._coordinator.store.get_device_receiver(self._device_id)
+        if recv_id:
+            attrs["receiver_device_id"] = recv_id
+            attrs["link_type"] = "direct"
+        else:
+            room_id = self._coordinator.store.room_for_device(self._device_id)
+            if room_id:
+                room_data = self._coordinator.store.get_room(room_id) or {}
+                recv_id   = room_data.get("receiver_device_id")
+                if recv_id:
+                    attrs["receiver_device_id"] = recv_id
+                    attrs["link_type"] = "via room"
+                    attrs["room_id"]   = room_id
+        return attrs

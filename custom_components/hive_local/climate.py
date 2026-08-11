@@ -153,6 +153,8 @@ class HiveDeviceClimate(ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict:
         attrs: dict = {}
+        dtype = self._device_data.get("type")
+
         if self._mqtt.battery is not None:
             attrs["battery"] = self._mqtt.battery
         if self._mqtt.pi_heating_demand is not None:
@@ -161,11 +163,39 @@ class HiveDeviceClimate(ClimateEntity):
             attrs["local_temperature_calibration"] = self._mqtt.local_temp_calibration
         if self._mqtt.heat_boost_active:
             attrs["boost_remaining_minutes"] = self._mqtt.heat_boost_remaining
-        # Receiver link — used by panel card
-        recv_id = self._coordinator.store.get_device_receiver(self._device_id)
-        if recv_id:
-            recv_data = self._coordinator.store.get_device(recv_id) or {}
-            attrs["receiver_name"] = recv_data.get("name", recv_id)
+
+        if dtype == DEVICE_TYPE_TRV:
+            # Show which receiver this TRV fires
+            recv_id = self._coordinator.store.get_device_receiver(self._device_id)
+            if not recv_id:
+                room_id = self._coordinator.store.room_for_device(self._device_id)
+                if room_id:
+                    room_data = self._coordinator.store.get_room(room_id) or {}
+                    recv_id = room_data.get("receiver_device_id")
+            if recv_id:
+                recv_data = self._coordinator.store.get_device(recv_id) or {}
+                attrs["receiver_name"] = recv_data.get("name", recv_id)
+
+        elif dtype == DEVICE_TYPE_RECEIVER:
+            # Show which rooms/TRVs are currently demanding heat from this receiver
+            demanding: list[str] = []
+
+            # From rooms assigned to this receiver
+            for room in self._coordinator.all_rooms().values():
+                if room.receiver_device_id == self._device_id and room.heat_required:
+                    demanding.append(room.room_name)
+
+            # From individual TRVs assigned directly to this receiver
+            for did, dd in self._coordinator.store.get_all_devices().items():
+                if dd.get("receiver_device_id") != self._device_id:
+                    continue
+                mqtt = self._coordinator.get_device_mqtt(did)
+                if mqtt and (mqtt.running_state == "heat" or mqtt.heat_required is True):
+                    demanding.append(dd.get("name", did))
+
+            attrs["heat_demand_active"] = len(demanding) > 0
+            attrs["demanded_by"]        = demanding if demanding else []
+
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
