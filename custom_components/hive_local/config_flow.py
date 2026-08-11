@@ -122,22 +122,31 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         ]
 
     def _discovered_z2m_topics(self) -> dict[str, str]:
-        """Return {topic: label} for Z2M MQTT climate entities not already registered.
+        """Return {topic: friendly_name} for Z2M climate entities not already registered.
 
-        Label priority:
-        1. Device name from the device registry (set by Z2M from friendly_name)
-        2. Entity name from entity registry
-        3. Last segment of the MQTT topic (e.g. "Living Room TRV")
+        Z2M registers climate entities with entity_id like climate.living_room_trv.
+        The friendly name is best read from:
+        1. hass.states — the friendly_name attribute on the live state
+        2. entity registry original_name / name
+        3. The entity_id slug converted to title case as a fallback
+
+        The "topic" key we store is the Z2M MQTT topic, which for Z2M is:
+          {base_topic}/{friendly_name}
+        We derive this from the entity_id slug since Z2M slugifies friendly names
+        the same way HA does (lowercase, underscores).
+        We also include the real entity_id so the user can verify.
         """
         from homeassistant.helpers import device_registry as dr
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
+        base    = self._z2m_base()
 
         existing_topics = {
             d.get("mqtt_topic", "")
             for d in self._all_devices().values()
             if d.get("mqtt_topic")
         }
+
         result: dict[str, str] = {}
         for entry in ent_reg.entities.values():
             if entry.platform != "mqtt":
@@ -145,26 +154,47 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             if not entry.entity_id.startswith("climate."):
                 continue
             uid = entry.unique_id or ""
+            # Skip our own room entities
             if uid.startswith(f"{DOMAIN}_") and uid.endswith("_climate"):
-                continue  # our own room entity
-            topic = uid
-            if topic in existing_topics:
                 continue
 
-            # Get the Z2M friendly name from the device registry
+            # ── Derive friendly name ─────────────────────────────────────────
             friendly = ""
-            if entry.device_id:
+
+            # 1. Live state friendly_name (most reliable — set by Z2M)
+            state = self.hass.states.get(entry.entity_id)
+            if state:
+                friendly = state.attributes.get("friendly_name", "")
+
+            # 2. Device registry name
+            if not friendly and entry.device_id:
                 device = dev_reg.async_get(entry.device_id)
                 if device:
                     friendly = device.name_by_user or device.name or ""
 
-            # Fall back to entity name, then topic segment
+            # 3. Entity registry name
             if not friendly:
                 friendly = entry.name or entry.original_name or ""
+
+            # 4. Slug to title case from entity_id
             if not friendly:
-                friendly = topic.split("/")[-1] if "/" in topic else topic
+                slug = entry.entity_id.replace("climate.", "")
+                friendly = slug.replace("_", " ").title()
+
+            # ── Derive Z2M topic ─────────────────────────────────────────────
+            # Z2M topic = base_topic/friendly_name
+            # If uid looks like a topic already (contains /) use it directly
+            if "/" in uid:
+                topic = uid
+            else:
+                # Build from friendly name — Z2M uses the friendly_name as the topic segment
+                topic = f"{base}/{friendly}"
+
+            if topic in existing_topics:
+                continue
 
             result[topic] = friendly
+
         return result
 
     def _no_rooms_result(self) -> config_entries.FlowResult:
