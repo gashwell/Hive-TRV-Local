@@ -161,6 +161,11 @@ class HiveDeviceClimate(ClimateEntity):
             attrs["local_temperature_calibration"] = self._mqtt.local_temp_calibration
         if self._mqtt.heat_boost_active:
             attrs["boost_remaining_minutes"] = self._mqtt.heat_boost_remaining
+        # Receiver link — used by panel card
+        recv_id = self._coordinator.store.get_device_receiver(self._device_id)
+        if recv_id:
+            recv_data = self._coordinator.store.get_device(recv_id) or {}
+            attrs["receiver_name"] = recv_data.get("name", recv_id)
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -279,6 +284,10 @@ class HiveRoomClimate(ClimateEntity):
             attrs["outdoor_temperature"]     = self._room.outdoor_temperature
         if self._room.frost_active:
             attrs["frost_protection_active"] = True
+        # Receiver name — used by panel card
+        if self._room.receiver_device_id:
+            recv_data = self._coordinator.store.get_device(self._room.receiver_device_id) or {}
+            attrs["receiver_name"] = recv_data.get("name", self._room.receiver_device_id)
         return attrs
 
     async def async_set_temperature(self, **kwargs: Any) -> None:

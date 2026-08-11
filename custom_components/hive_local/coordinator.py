@@ -283,14 +283,38 @@ class HiveLocalCoordinator:
             _LOGGER.info("Global frost protection cleared")
 
         # ── Per-receiver demand ────────────────────────────────────────────────
-        # Build {receiver_device_id: bool} — True if any assigned room needs heat
+        # Build {receiver_device_id: bool} — True if any assigned room OR TRV needs heat
         receiver_demand: dict[str, bool] = {}
+
+        # From rooms
         for room in self._rooms.values():
             if not room.receiver_device_id:
                 continue
             rid = room.receiver_device_id
             needed = room.heat_required or frost_trigger
             receiver_demand[rid] = receiver_demand.get(rid, False) or needed
+
+        # From standalone TRVs (not in any room) with their own receiver assigned
+        for device_id, device_data in self.store.get_all_devices().items():
+            if device_data.get("type") != DEVICE_TYPE_TRV:
+                continue
+            rid = device_data.get("receiver_device_id")
+            if not rid:
+                continue
+            # Only fire if TRV is not in a room (rooms handle their own demand)
+            if self.store.room_for_device(device_id):
+                continue
+            mqtt = self._devices.get(device_id)
+            if not mqtt:
+                continue
+            trv_heating = mqtt.running_state == "heat" or mqtt.heat_required is True
+            needed = trv_heating or frost_trigger
+            receiver_demand[rid] = receiver_demand.get(rid, False) or needed
+            if needed:
+                _LOGGER.debug(
+                    "TRV %s demanding heat → receiver %s",
+                    device_data.get("name", device_id), rid,
+                )
 
         # Signal each receiver
         for receiver_id, needed in receiver_demand.items():
@@ -347,6 +371,15 @@ class HiveLocalCoordinator:
             _LOGGER.info(
                 "Room %s → receiver %s", room_id, receiver_device_id or "none"
             )
+
+    async def async_assign_device_receiver(
+        self, device_id: str, receiver_device_id: str | None
+    ) -> None:
+        """Assign a receiver to a standalone TRV for on-demand heat control."""
+        await self.store.async_set_device_receiver(device_id, receiver_device_id)
+        _LOGGER.info(
+            "TRV %s → receiver %s", device_id, receiver_device_id or "none"
+        )
 
     def update_frost_protection(
         self,

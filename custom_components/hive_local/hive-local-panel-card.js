@@ -213,12 +213,15 @@ class HiveLocalPanelCard extends HTMLElement {
             : r.state === 'off'
               ? badge('off', 'off')
               : badge('idle', 'idle');
+        const recvBadgeRoom = recv
+          ? badge(recv, 'recv')
+          : `<span class="badge" style="background:#fff7ed;color:#c2410c;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:500">link receiver</span>`;
 
         const meta = [
           `${members.length} TRV${members.length !== 1 ? 's' : ''}`,
           cur != null ? `avg ${parseFloat(cur).toFixed(1)}°` : null,
           target != null ? `target ${parseFloat(target).toFixed(1)}°` : null,
-          recv || 'no receiver linked',
+          recv ? `→ ${recv}` : 'no receiver linked',
         ].filter(Boolean).join(' · ');
 
         const memberTemps = members
@@ -231,6 +234,7 @@ class HiveLocalPanelCard extends HTMLElement {
             <div class="row-top">
               <span class="row-name">${attrs.friendly_name || r.entity_id}</span>
               ${statusBadge}
+              ${recvBadgeRoom}
             </div>
             <div class="row-meta">${meta}</div>
             ${memberTemps ? `<div class="row-meta" style="margin-top:1px">${memberTemps}</div>` : ''}
@@ -252,18 +256,24 @@ class HiveLocalPanelCard extends HTMLElement {
         <div class="card">`;
 
       standalone.forEach(s => {
-        const attrs   = s.attributes;
-        const heating = attrs.hvac_action === 'heating';
-        const cur     = attrs.current_temperature;
-        const bat     = attrs.battery;
-        const demand  = attrs.pi_heating_demand;
+        const attrs      = s.attributes;
+        const heating    = attrs.hvac_action === 'heating';
+        const cur        = attrs.current_temperature;
+        const bat        = attrs.battery;
+        const demand     = attrs.pi_heating_demand;
+        const recvLinked = attrs.receiver_name || null;
 
         const meta = [
           heating ? 'heating' : (s.state === 'off' ? 'off' : 'idle'),
-          cur != null ? `${parseFloat(cur).toFixed(1)}°` : null,
-          bat != null ? `batt ${Math.round(bat)}%` : null,
+          cur    != null ? `${parseFloat(cur).toFixed(1)}°` : null,
+          bat    != null ? `batt ${Math.round(bat)}%` : null,
           demand != null ? `demand ${Math.round(demand)}%` : null,
+          recvLinked ? `→ ${recvLinked}` : 'no receiver linked',
         ].filter(Boolean).join(' · ');
+
+        const recvBadgeTrv = recvLinked
+          ? badge(recvLinked, 'recv')
+          : `<span class="badge" style="background:#fff7ed;color:#c2410c;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:500">link receiver</span>`;
 
         html += `<div class="row" data-navigate="${s.entity_id}">
           <div class="dot" style="background:${heating ? '#e8632a' : '#c8c8c8'}"></div>
@@ -272,6 +282,7 @@ class HiveLocalPanelCard extends HTMLElement {
             <div class="row-top">
               <span class="row-name">${attrs.friendly_name || s.entity_id}</span>
               ${badge('ungrouped', 'solo')}
+              ${recvBadgeTrv}
             </div>
             <div class="row-meta">${meta}</div>
           </div>
@@ -355,6 +366,14 @@ class HiveLocalPanelCard extends HTMLElement {
           <div class="row-body">
             <div class="row-name">Add a TRV or receiver</div>
             <div class="row-meta">Manual add if auto-discovery missed a device</div>
+          </div>
+          ${chev()}
+        </div>
+        <div class="row" data-action="link_receiver">
+          <div class="icon icon-recv">${ICONS.recv}</div>
+          <div class="row-body">
+            <div class="row-name">Link TRV or room to receiver</div>
+            <div class="row-meta">Configure on-demand heating for any TRV or room</div>
           </div>
           ${chev()}
         </div>

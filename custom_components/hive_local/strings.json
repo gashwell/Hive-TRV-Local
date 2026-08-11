@@ -45,7 +45,8 @@
           "add_trv": "Add a TRV",
           "add_receiver": "Add a receiver",
           "add_sensor": "Add a temperature sensor",
-          "remove_device": "Remove a device"
+          "remove_device": "Remove a device",
+          "link_trv_receiver": "Link TRV to receiver (on-demand heating)"
         }
       },
       "add_trv": {
@@ -165,6 +166,26 @@
         },
         "data_description": {
           "receiver_device_id": "When any TRV in this room calls for heat, this receiver will be commanded to heat. Select None to use the global boiler entity configured in Settings."
+        }
+      },
+      "link_trv_receiver": {
+        "title": "Link TRV to receiver \u2014 step 1 of 2",
+        "description": "{hint}",
+        "data": {
+          "device_id": "TRV"
+        },
+        "data_description": {
+          "device_id": "Select the TRV to configure on-demand heating for."
+        }
+      },
+      "link_trv_receiver_assign": {
+        "title": "Link TRV to receiver \u2014 step 2 of 2",
+        "description": "{hint}",
+        "data": {
+          "receiver_device_id": "Receiver"
+        },
+        "data_description": {
+          "receiver_device_id": "When this TRV calls for heat, the receiver will be commanded to fire the boiler."
         }
       }
     }

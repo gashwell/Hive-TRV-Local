@@ -13,7 +13,8 @@ Schema v1:
       "mqtt_topic":  "zigbee2mqtt/Living Room TRV",  # TRV/receiver only
       "entity_id":   "sensor.living_room_temp",       # sensor type only
       "model":       "SLR1",                          # receiver only
-      "show_water":  false                            # receiver SLR2 only
+      "show_water":  false,                           # receiver SLR2 only
+      "receiver_device_id": "<device_id>"             # TRV only — on-demand receiver
     }
   },
   "rooms": {
@@ -135,3 +136,16 @@ class HiveLocalStore:
             if device_id in room.get("device_ids", []):
                 return room_id
         return None
+
+    async def async_set_device_receiver(
+        self, device_id: str, receiver_device_id: str | None
+    ) -> None:
+        """Set (or clear) the receiver assigned to a TRV device."""
+        devices = self._data.setdefault("devices", {})
+        if device_id in devices:
+            devices[device_id]["receiver_device_id"] = receiver_device_id
+            await self.async_save()
+
+    def get_device_receiver(self, device_id: str) -> str | None:
+        d = self.get_device(device_id) or {}
+        return d.get("receiver_device_id")

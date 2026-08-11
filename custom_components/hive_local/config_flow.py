@@ -323,10 +323,11 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_menu(
             step_id="manage_devices",
             menu_options={
-                "add_trv":       "Add a TRV",
-                "add_receiver":  "Add a receiver (SLR1 / SLR2 / OTR1)",
-                "add_sensor":    "Add a temperature sensor",
-                "remove_device": "Remove a device",
+                "add_trv":          "Add a TRV",
+                "add_receiver":     "Add a receiver (SLR1 / SLR2 / OTR1)",
+                "add_sensor":       "Add a temperature sensor",
+                "link_trv_receiver":"Link TRV to receiver (on-demand heating)",
+                "remove_device":    "Remove a device",
             },
         )
 
@@ -523,6 +524,104 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "topic": self._dev_topic,
                 "type":  "TRV" if self._dev_type == DEVICE_TYPE_TRV else f"Receiver ({self._dev_model})",
+            },
+        )
+
+    # ── Link TRV to receiver ───────────────────────────────────────────────────
+
+    async def async_step_link_trv_receiver(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        """Step 1 — pick which TRV to configure on-demand heating for."""
+        devices   = self._all_devices()
+        receivers = self._registered_receivers()
+
+        # All TRVs — grouped or standalone (they can all have a receiver)
+        trv_options = [
+            selector.SelectOptionDict(value=did, label=dd.get("name", did))
+            for did, dd in sorted(devices.items(), key=lambda x: x[1].get("name",""))
+            if dd.get("type") == DEVICE_TYPE_TRV
+        ]
+
+        if not trv_options:
+            return self._no_rooms_result()
+
+        if not receivers:
+            return self.async_show_form(
+                step_id="link_trv_receiver",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "hint": "No receivers registered yet. Add a receiver first via Manage Devices → Add a receiver."
+                },
+            )
+
+        if user_input is not None:
+            self._link_device_id = user_input.get("device_id", "")
+            return await self.async_step_link_trv_receiver_assign()
+
+        return self.async_show_form(
+            step_id="link_trv_receiver",
+            data_schema=vol.Schema({
+                vol.Required("device_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=trv_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "hint": (
+                    "Select a TRV to configure. When this TRV calls for heat, "
+                    "its assigned receiver will be commanded to fire the boiler. "
+                    "TRVs inside a room inherit the room's receiver — you can "
+                    "override that here."
+                ),
+            },
+        )
+
+    async def async_step_link_trv_receiver_assign(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        """Step 2 — pick which receiver to assign to this TRV."""
+        devices   = self._all_devices()
+        receivers = self._registered_receivers()
+        device    = devices.get(self._link_device_id, {})
+        dev_name  = device.get("name", self._link_device_id)
+        current   = device.get("receiver_device_id", "")
+
+        if user_input is not None:
+            recv_id = user_input.get("receiver_device_id") or None
+            c = self._coordinator()
+            if c:
+                await c.async_assign_device_receiver(self._link_device_id, recv_id)
+            return self.async_create_entry(title="", data=self.config_entry.options or {})
+
+        options = [selector.SelectOptionDict(value="", label="None — remove receiver link")]
+        options += [
+            selector.SelectOptionDict(value=did, label=name)
+            for did, name in sorted(receivers.items(), key=lambda x: x[1])
+        ]
+
+        return self.async_show_form(
+            step_id="link_trv_receiver_assign",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "receiver_device_id",
+                    default=current or "",
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "device_name": dev_name,
+                "hint": (
+                    f"When {dev_name} calls for heat, the selected receiver "
+                    "will be commanded to heat via MQTT. "
+                    "Select None to remove the link."
+                ),
             },
         )
 
