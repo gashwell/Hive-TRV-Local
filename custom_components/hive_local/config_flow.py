@@ -578,36 +578,31 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 },
             )
 
-        # Handle selection
+        # Handle selection — multiple targets can be selected at once
         if user_input is not None:
-            target = user_input.get("target", "")
-            if target.startswith("room:"):
-                self._edit_room_id   = target[5:]
-                self._link_device_id = ""
-            else:
-                self._link_device_id = target[4:]  # strip "trv:"
-                self._edit_room_id   = ""
+            targets = user_input.get("targets") or []
+            self._on_demand_targets = targets
             return await self.async_step_assign_receiver()
 
         return self.async_show_form(
             step_id="on_demand_heating",
             data_schema=vol.Schema({
-                vol.Required("target"): selector.SelectSelector(
+                vol.Required("targets"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
                             selector.SelectOptionDict(value=k, label=v)
                             for k, v in options.items()
                         ],
+                        multiple=True,
                         mode=selector.SelectSelectorMode.LIST,
                     )
                 ),
             }),
             description_placeholders={
                 "hint": (
-                    "Select a TRV or room to configure. "
-                    "The current receiver link is shown next to each name. "
-                    "When a TRV or room calls for heat, its linked receiver "
-                    "will fire the boiler automatically."
+                    "Select one or more TRVs or rooms. "
+                    "Current receiver link shown next to each name. "
+                    "You can select multiple TRVs to link them all to the same receiver at once."
                 ),
             },
         )
@@ -627,29 +622,46 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         devices   = self._all_devices()
         rooms     = self._all_rooms()
 
-        is_room = bool(self._edit_room_id)
+        # Derive context from targets list or legacy single-target vars
+        targets  = self._on_demand_targets
+        first    = targets[0] if targets else (
+            f"room:{self._edit_room_id}" if self._edit_room_id
+            else f"trv:{self._link_device_id}"
+        )
+        is_room = first.startswith("room:")
         if is_room:
-            target_name    = rooms.get(self._edit_room_id, {}).get("name", self._edit_room_id)
-            current_recv   = rooms.get(self._edit_room_id, {}).get("receiver_device_id","")
+            fid          = first[5:]
+            target_name  = rooms.get(fid, {}).get("name", fid)
+            current_recv = rooms.get(fid, {}).get("receiver_device_id","")
         else:
-            target_name    = devices.get(self._link_device_id, {}).get("name", self._link_device_id)
-            current_recv   = devices.get(self._link_device_id, {}).get("receiver_device_id","")
+            fid          = first[4:]
+            target_name  = devices.get(fid, {}).get("name", fid)
+            current_recv = devices.get(fid, {}).get("receiver_device_id","")
 
         if user_input is not None:
             recv_id = user_input.get("receiver_device_id") or None
             c       = self._coordinator()
             store   = self._store()
 
-            if is_room:
-                if store:
-                    rd = dict(store.get_room(self._edit_room_id) or {})
-                    rd["receiver_device_id"] = recv_id
-                    await store.async_save_room(self._edit_room_id, rd)
-                if c:
-                    c.assign_room_receiver(self._edit_room_id, recv_id)
-            else:
-                if c:
-                    await c.async_assign_device_receiver(self._link_device_id, recv_id)
+            # Apply to all selected targets
+            targets = self._on_demand_targets or (
+                [f"room:{self._edit_room_id}"] if self._edit_room_id
+                else [f"trv:{self._link_device_id}"] if self._link_device_id
+                else []
+            )
+            for target in targets:
+                if target.startswith("room:"):
+                    rid = target[5:]
+                    if store:
+                        rd = dict(store.get_room(rid) or {})
+                        rd["receiver_device_id"] = recv_id
+                        await store.async_save_room(rid, rd)
+                    if c:
+                        c.assign_room_receiver(rid, recv_id)
+                elif target.startswith("trv:"):
+                    did = target[4:]
+                    if c:
+                        await c.async_assign_device_receiver(did, recv_id)
 
             return self.async_create_entry(title="", data=self.config_entry.options or {})
 
@@ -659,7 +671,17 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             for did, name in sorted(receivers.items(), key=lambda x: x[1])
         ]
 
-        action = "room" if is_room else "TRV"
+        count = len(self._on_demand_targets)
+        names = []
+        for t in self._on_demand_targets[:3]:
+            if t.startswith("room:"):
+                names.append(rooms.get(t[5:], {}).get("name", t))
+            else:
+                names.append(devices.get(t[4:], {}).get("name", t))
+        if count > 3:
+            names.append(f"+ {count - 3} more")
+        summary = ", ".join(names) if names else target_name
+
         return self.async_show_form(
             step_id="assign_receiver",
             data_schema=vol.Schema({
@@ -674,9 +696,12 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 ),
             }),
             description_placeholders={
-                "target_name": target_name,
-                "target_type": action,
+                "target_name": summary,
+                "target_type": f"{count} selected" if count > 1 else ("Room" if is_room else "TRV"),
                 "hint": (
+                    f"Linking {count} device(s): {summary}. "
+                    "All selected will be linked to the same receiver."
+                ) if count > 1 else (
                     f"When {target_name} calls for heat, the selected receiver "
                     "will be commanded to fire the boiler via MQTT."
                 ),
@@ -798,6 +823,12 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                     await c.async_remove_device(device_id)
             return self.async_create_entry(title="", data=self.config_entry.options or {})
 
+        type_labels = {
+            "trv":      "TRV",
+            "receiver": "Receiver",
+            "sensor":   "Sensor",
+        }
+
         return self.async_show_form(
             step_id="remove_device",
             data_schema=vol.Schema({
@@ -806,14 +837,25 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                         options=[
                             selector.SelectOptionDict(
                                 value=did,
-                                label=f"{dd.get('name', did)} ({dd.get('type', '?')})"
+                                label=(
+                                    f"{dd.get('name', did)}"
+                                    f" — {type_labels.get(dd.get('type','?'), dd.get('type','?'))}"
+                                    f" ({dd.get('mqtt_topic', dd.get('entity_id', ''))})"
+                                )
                             )
                             for did, dd in sorted(devices.items(), key=lambda x: x[1].get("name", ""))
                         ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.LIST,
                     )
                 ),
             }),
+            description_placeholders={
+                "hint": (
+                    "Select the device to remove. "
+                    "TRVs removed here will be re-discovered automatically within 5 minutes "
+                    "if they are still paired to Zigbee2MQTT."
+                ),
+            },
         )
 
     # ── Room management menu ───────────────────────────────────────────────────

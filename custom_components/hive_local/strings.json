@@ -95,9 +95,9 @@
       },
       "remove_device": {
         "title": "Remove Device",
-        "description": "Select the device to remove.",
+        "description": "{hint}",
         "data": {
-          "device_id": "Device"
+          "device_id": "Device to remove"
         }
       },
       "manage_rooms": {
@@ -192,10 +192,10 @@
         "title": "On-demand heating",
         "description": "{hint}",
         "data": {
-          "target": "TRV or room"
+          "targets": "TRVs and rooms"
         },
         "data_description": {
-          "target": "Current receiver link shown next to each name. Select one to change it."
+          "targets": "Select one or more. Current receiver shown next to each name."
         }
       },
       "assign_receiver": {
