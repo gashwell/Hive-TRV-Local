@@ -146,6 +146,13 @@ class HiveLocalStore:
             devices[device_id]["receiver_device_id"] = receiver_device_id
             await self.async_save()
 
+    async def async_set_device_on_demand(self, device_id: str, enabled: bool) -> None:
+        """Enable or disable on-demand heating for a standalone TRV."""
+        devices = self._data.setdefault("devices", {})
+        if device_id in devices:
+            devices[device_id]["on_demand_enabled"] = enabled
+            await self.async_save()
+
     def get_device_receiver(self, device_id: str) -> str | None:
         d = self.get_device(device_id) or {}
         return d.get("receiver_device_id")

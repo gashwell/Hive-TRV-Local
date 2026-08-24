@@ -243,6 +243,7 @@ class HiveLocalCoordinator:
             frost_enabled  = bool(room_data.get("frost_enabled", False)),
         )
         room.receiver_device_id = room_data.get("receiver_device_id")
+        room.on_demand_enabled  = room_data.get("on_demand_enabled", True)
         room.add_listener(self._on_room_state_change)
         await room.async_setup()
         self._rooms[room_id] = room
@@ -280,16 +281,27 @@ class HiveLocalCoordinator:
         )
 
     def _any_trv_calling(self) -> tuple[bool, list[str]]:
-        """Check every registered TRV, regardless of room or receiver assignment.
+        """Check every on-demand-enabled TRV for heat demand.
 
-        Returns (demand, names_calling). Room membership is a display grouping —
-        it must not gate whether a valve can fire the boiler.
+        Returns (demand, names_calling).
+        TRVs in rooms inherit the room's on_demand_enabled flag.
+        Standalone TRVs use their own on_demand_enabled flag.
+        Unavailable TRVs are excluded.
         """
         calling: list[str] = []
         unavailable: list[str] = []
         for device_id, device_data in self.store.get_all_devices().items():
             if device_data.get("type") != DEVICE_TYPE_TRV:
                 continue
+            # Check on_demand_enabled
+            room_id = self.store.room_for_device(device_id)
+            if room_id:
+                room = self._rooms.get(room_id)
+                if not room or not room.on_demand_enabled:
+                    continue
+            else:
+                if not device_data.get("on_demand_enabled", True):
+                    continue
             mqtt = self._devices.get(device_id)
             name = device_data.get("name", device_id)
             if not mqtt or not mqtt.available:
@@ -335,28 +347,26 @@ class HiveLocalCoordinator:
             needed = room.heat_required or frost_trigger
             receiver_demand[rid] = receiver_demand.get(rid, False) or needed
 
-        # From individual TRVs with a receiver assigned directly.
-        # This covers:
-        #   - Standalone TRVs (not in any room)
-        #   - TRVs in a room whose room has no receiver assigned
-        #   - TRVs with their own receiver override
-        # The receiver does NOT need to be linked to a room — any TRV can fire
-        # it directly regardless of room membership.
+        # Per-TRV demand — only for on-demand enabled devices/rooms
+        # (ZBMINIR2 path — separate from the global boiler_entity)
         for device_id, device_data in self.store.get_all_devices().items():
             if device_data.get("type") != DEVICE_TYPE_TRV:
                 continue
-            rid = device_data.get("receiver_device_id")
-            if not rid:
-                # TRV has no direct receiver — check if its room has one
-                room_id = self.store.room_for_device(device_id)
-                if room_id:
-                    room = self._rooms.get(room_id)
-                    if room and room.receiver_device_id:
-                        rid = room.receiver_device_id
-                    else:
-                        continue
-                else:
+            room_id = self.store.room_for_device(device_id)
+            if room_id:
+                room = self._rooms.get(room_id)
+                if not room or not room.on_demand_enabled:
                     continue
+            else:
+                if not device_data.get("on_demand_enabled", True):
+                    continue
+            rid = device_data.get("receiver_device_id")
+            if not rid and room_id:
+                room = self._rooms.get(room_id)
+                if room:
+                    rid = room.receiver_device_id
+            if not rid:
+                continue
             mqtt = self._devices.get(device_id)
             if not mqtt:
                 continue

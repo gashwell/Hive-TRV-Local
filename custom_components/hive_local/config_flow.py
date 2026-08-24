@@ -536,22 +536,120 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
     # ── On-demand heating ─────────────────────────────────────────────────────
 
     async def async_step_on_demand_heating(self, user_input: dict | None = None) -> config_entries.FlowResult:
-        """On-demand heating — redirect to Settings where the ZBMINIR2 is configured."""
+        """On-demand heating — select rooms and standalone TRVs to enable.
+
+        Rooms are the natural unit: one schedule, one target temp, multiple valves.
+        Each TRV in a selected room fires the ZBMINIR2 independently when it demands
+        heat — the room just groups them for configuration purposes.
+        Standalone TRVs can also be individually enabled.
+        """
+        store   = self._store()
+        devices = self._all_devices()
+        rooms   = self._all_rooms()
+
+        if not self.boiler_entity_configured():
+            return self.async_show_form(
+                step_id="on_demand_heating",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "hint": (
+                        "No heat demand switch configured yet. "
+                        "Go to Settings first and set your ZBMINIR2 switch entity, "
+                        "then return here to select which rooms and TRVs trigger it."
+                    ),
+                },
+            )
+
+        options: list[selector.SelectOptionDict] = []
+
+        # Rooms
+        for rid, rd in sorted(rooms.items(), key=lambda x: x[1].get("name", "")):
+            name      = rd.get("name", rid)
+            enabled   = rd.get("on_demand_enabled", False)
+            trv_count = len(rd.get("device_ids", []))
+            label     = f"{'✓' if enabled else '○'}  {name}  ({trv_count} TRV{'s' if trv_count != 1 else ''})"
+            options.append(selector.SelectOptionDict(value=f"room:{rid}", label=label))
+
+        # Standalone TRVs (not in any room)
+        for did, dd in sorted(devices.items(), key=lambda x: x[1].get("name", "")):
+            if dd.get("type") != DEVICE_TYPE_TRV:
+                continue
+            if store and store.room_for_device(did):
+                continue
+            name    = dd.get("name", did)
+            enabled = dd.get("on_demand_enabled", False)
+            label   = f"{'✓' if enabled else '○'}  {name}  (standalone TRV)"
+            options.append(selector.SelectOptionDict(value=f"trv:{did}", label=label))
+
+        if not options:
+            return self.async_show_form(
+                step_id="on_demand_heating",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "hint": "No rooms or TRVs configured yet. Add a TRV and create a room first."
+                },
+            )
+
         if user_input is not None:
-            return await self.async_step_settings()
+            selected = set(user_input.get("targets") or [])
+            c        = self._coordinator()
+
+            # Enable selected, disable deselected
+            for rid, rd in rooms.items():
+                enabled = f"room:{rid}" in selected
+                rd2     = dict(rd)
+                rd2["on_demand_enabled"] = enabled
+                if store:
+                    await store.async_save_room(rid, rd2)
+                if c:
+                    room = c.get_room(rid)
+                    if room:
+                        room.on_demand_enabled = enabled
+
+            for did, dd in devices.items():
+                if dd.get("type") != DEVICE_TYPE_TRV:
+                    continue
+                if store and store.room_for_device(did):
+                    continue
+                enabled = f"trv:{did}" in selected
+                await store.async_set_device_on_demand(did, enabled)
+
+            return self.async_create_entry(title="", data=self.config_entry.options or {})
+
+        # Pre-select currently enabled entries
+        current = []
+        for rid, rd in rooms.items():
+            if rd.get("on_demand_enabled", False):
+                current.append(f"room:{rid}")
+        for did, dd in devices.items():
+            if dd.get("type") == DEVICE_TYPE_TRV and dd.get("on_demand_enabled", False):
+                if not (store and store.room_for_device(did)):
+                    current.append(f"trv:{did}")
 
         return self.async_show_form(
             step_id="on_demand_heating",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema({
+                vol.Optional("targets", default=current): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
             description_placeholders={
                 "hint": (
-                    "The Sonoff ZBMINIR2 is your heat demand switch. "
-                    "Configure it once in Settings → Heat demand switch. "
-                    "When any TRV calls for heat, the switch fires automatically. "
-                    "\n\nPress Next to go to Settings."
+                    "Select the rooms and TRVs that should trigger the heat demand switch "
+                    "(ZBMINIR2). When any selected TRV calls for heat, the switch fires. "
+                    "Rooms share a schedule and temperature target — each TRV inside "
+                    "works its valve independently."
                 ),
             },
         )
+
+    def boiler_entity_configured(self) -> bool:
+        merged = {**(self.config_entry.data or {}), **(self.config_entry.options or {})}
+        return bool(merged.get(CONF_BOILER_ENTITY))
 
 
     # ── Shared receiver assignment step ───────────────────────────────────────

@@ -78,6 +78,8 @@ class HiveRoom:
 
         # Receiver — device_id of the registered receiver this room controls
         self.receiver_device_id: str | None = None
+        # On-demand heating — whether this room triggers the ZBMINIR2
+        self.on_demand_enabled: bool = True
 
         # Listeners (notify HA entities of state change)
         self._listeners: list = []

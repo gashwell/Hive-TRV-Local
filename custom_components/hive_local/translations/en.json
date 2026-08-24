@@ -180,8 +180,12 @@
       "on_demand_heating": {
         "title": "On-demand heating",
         "description": "{hint}",
-        "data": {},
-        "data_description": {}
+        "data": {
+          "targets": "Rooms and TRVs"
+        },
+        "data_description": {
+          "targets": "Selected rooms and TRVs will trigger the heat demand switch (ZBMINIR2) when any of their valves call for heat."
+        }
       },
       "assign_receiver": {
         "title": "Link to receiver",
