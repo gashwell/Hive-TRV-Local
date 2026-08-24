@@ -437,23 +437,29 @@ class HiveLocalCoordinator:
         )
 
     async def _set_boiler(self, on: bool) -> None:
-        """Drive the configured boiler entity — any HA switch/climate entity."""
+        """Drive the heat-demand switch — ZBMINIR2, relay, climate, input_boolean.
+
+        Uses turn_on / turn_off which works for switch, input_boolean, and climate
+        domains alike. The domain is taken from the entity_id prefix so no extra
+        config is needed when swapping between device types.
+        """
         if not self.boiler_entity or on == self._boiler_demand:
             return
         self._boiler_demand = on
         domain  = self.boiler_entity.split(".")[0]
         service = "turn_on" if on else "turn_off"
+        action  = "ON  → firing boiler" if on else "OFF → boiler demand cleared"
         try:
             await self.hass.services.async_call(
                 domain, service,
                 {ATTR_ENTITY_ID: self.boiler_entity},
                 blocking=False,
             )
-            _LOGGER.info(
-                "Boiler entity → %s (%s)", "ON" if on else "OFF", self.boiler_entity
-            )
+            _LOGGER.info("Heat demand switch %s (%s)", action, self.boiler_entity)
         except Exception as exc:
-            _LOGGER.warning("Boiler service call failed: %s", exc)
+            _LOGGER.warning(
+                "Heat demand switch call failed for %s: %s", self.boiler_entity, exc
+            )
 
     def update_boiler_entity(self, entity_id: str | None) -> None:
         self.boiler_entity = entity_id

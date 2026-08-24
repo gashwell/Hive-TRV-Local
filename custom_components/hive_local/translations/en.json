@@ -29,13 +29,13 @@
         "description": "{frost_hint}",
         "data": {
           "z2m_base_topic": "Zigbee2MQTT base topic",
-          "boiler_entity": "Boiler / receiver entity",
+          "boiler_entity": "Heat demand switch",
           "frost_protection_enabled": "Enable boiler frost protection (Open-Meteo)",
           "frost_protection_temp": "Frost threshold (\u00b0C)",
           "enable_diagnostics": "Enable diagnostic logging"
         },
         "data_description": {
-          "boiler_entity": "Turned on when any room calls for heat, off when all rooms are satisfied.",
+          "boiler_entity": "The switch that fires the boiler when any TRV demands heat \u2014 e.g. your Sonoff ZBMINIR2 switch entity (switch.zbminir2). Accepts any HA switch, climate, or input_boolean.",
           "frost_protection_enabled": "Fires the boiler when outdoor temperature falls to or below the threshold. Individual TRV frost protection is separate.",
           "frost_protection_temp": "Boiler activates when outdoor temperature reaches this value. Default: 2\u00b0C."
         }

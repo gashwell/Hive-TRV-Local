@@ -281,7 +281,7 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 CONF_BOILER_ENTITY,
                 description={"suggested_value": merged.get(CONF_BOILER_ENTITY)},
             ): selector.EntitySelector(selector.EntitySelectorConfig(
-                domain=["climate", "switch", "input_boolean"]
+                domain=["switch", "climate", "input_boolean"]
             )),
         }
 
@@ -315,7 +315,14 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(schema),
-            description_placeholders={"frost_hint": frost_hint},
+            description_placeholders={
+                "frost_hint": frost_hint,
+                "switch_hint": (
+                    "Set 'Heat demand switch' to your Sonoff ZBMINIR2 switch entity. "
+                    "When any TRV calls for heat the switch is turned on, firing the boiler. "
+                    "It turns off automatically after all demand clears (5-minute hold-off)."
+                ),
+            },
         )
 
     # ── Device management menu ─────────────────────────────────────────────────
