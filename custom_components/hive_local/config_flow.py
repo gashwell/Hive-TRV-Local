@@ -570,11 +570,16 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             label     = f"{'✓' if enabled else '○'}  {name}  ({trv_count} TRV{'s' if trv_count != 1 else ''})"
             options.append(selector.SelectOptionDict(value=f"room:{rid}", label=label))
 
-        # Standalone TRVs (not in any room)
+        # Standalone TRVs only — skip any TRV that belongs to a room
+        # (those are controlled via their room entry above)
+        grouped_trvs: set[str] = set()
+        for rd in rooms.values():
+            grouped_trvs.update(rd.get("device_ids", []))
+
         for did, dd in sorted(devices.items(), key=lambda x: x[1].get("name", "")):
             if dd.get("type") != DEVICE_TYPE_TRV:
                 continue
-            if store and store.room_for_device(did):
+            if did in grouped_trvs:
                 continue
             name    = dd.get("name", did)
             enabled = dd.get("on_demand_enabled", False)
