@@ -16,9 +16,10 @@ CONF_FROST_TEMP       = "frost_protection_temp"
 CONF_FROST_WEATHER    = "frost_protection_weather_entity"
 
 # ── Device type keys (stored per device in hass.data) ─────────────────────────
-DEVICE_TYPE_TRV       = "trv"
-DEVICE_TYPE_RECEIVER  = "receiver"
-DEVICE_TYPE_SENSOR    = "sensor"
+DEVICE_TYPE_TRV           = "trv"
+DEVICE_TYPE_RECEIVER      = "receiver"
+DEVICE_TYPE_SENSOR        = "sensor"
+DEVICE_TYPE_BOILER_SWITCH = "boiler_switch"
 
 # ── Receiver models ────────────────────────────────────────────────────────────
 MODEL_SLR1 = "SLR1"
