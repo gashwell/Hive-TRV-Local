@@ -49,7 +49,7 @@ class HiveLocalCoordinator:
         self._devices: dict[str, HiveDeviceMqtt] = {}   # device_id → mqtt handler
         self._rooms:   dict[str, HiveRoom]        = {}   # room_id   → room
 
-        self._boiler_demand:  bool = False
+        self._boiler_demand: bool | None = None  # None = unknown until first eval
         self._receiver_demand_state: dict[str, bool] = {}  # receiver_id → last demand
         self._unsub_boiler:   list = []
         self._boiler_off_timer    = None   # pending hold-off before switching boiler off
@@ -119,28 +119,16 @@ class HiveLocalCoordinator:
         async def _mark_ready(_now=None) -> None:
             self._startup_timer    = None
             self._startup_complete = True
-            _LOGGER.debug("Hive Local: startup settling complete — boiler eval now active")
-            # Always explicitly turn the switch off on startup regardless of
-            # _boiler_demand — it may be physically ON from a previous session.
-            # _evaluate_boiler will turn it back on immediately if demand exists.
-            if self.boiler_entity:
-                domain = self.boiler_entity.split(".")[0]
-                try:
-                    await self.hass.services.async_call(
-                        domain, "turn_off",
-                        {ATTR_ENTITY_ID: self.boiler_entity},
-                        blocking=True,
-                    )
-                    _LOGGER.info(
-                        "Startup: forced heat demand switch OFF (%s)", self.boiler_entity
-                    )
-                except Exception as exc:
-                    _LOGGER.warning("Startup turn_off failed: %s", exc)
-                finally:
-                    self._boiler_demand = False
+            _LOGGER.info(
+                "Hive Local: 30s startup settling complete — evaluating boiler demand"
+            )
+            # Now that TRV state is known, make one clean decision.
+            # _boiler_demand is None so _set_boiler will act regardless of direction.
             await self._evaluate_boiler()
 
-        self._startup_timer = async_call_later(self.hass, 10, _mark_ready)
+        # 30 seconds — enough for Z2M to replay all retained device state messages
+        # even on slow hardware or a busy broker.
+        self._startup_timer = async_call_later(self.hass, 30, _mark_ready)
 
     async def async_unload(self) -> None:
         if self._startup_timer:
@@ -500,7 +488,10 @@ class HiveLocalCoordinator:
         domains alike. The domain is taken from the entity_id prefix so no extra
         config is needed when swapping between device types.
         """
-        if not self.boiler_entity or on == self._boiler_demand:
+        if not self.boiler_entity:
+            return
+        # None means unknown — always act. Otherwise only act on a real change.
+        if self._boiler_demand is not None and on == self._boiler_demand:
             return
         self._boiler_demand = on
         domain  = self.boiler_entity.split(".")[0]
