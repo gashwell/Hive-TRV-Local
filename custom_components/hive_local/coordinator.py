@@ -378,26 +378,30 @@ class HiveLocalCoordinator:
             return
         switch_on = switch_entity.state in ("on", "ON", "heat")
 
-        if not switch_on:
-            return  # Already off — nothing to check
-
-        # Switch is ON — verify demand justifies it
+        # Evaluate actual demand
         frost          = self.check_frost_protection()
         trv_demand, _ = self._any_trv_calling()
         room_demand    = any(
             r.heat_required for r in self._rooms.values()
             if r.on_demand_enabled
         )
-        justified = trv_demand or room_demand or frost
+        demand = trv_demand or room_demand or frost
 
-        if not justified:
+        if switch_on and not demand:
             _LOGGER.warning(
-                "Watchdog: switch is ON but no demand exists — forcing OFF (%s)",
+                "Watchdog: switch ON but no demand — forcing OFF (%s)",
                 self.boiler_entity,
             )
-            # Reset _boiler_demand so _set_boiler won't skip the call
-            self._boiler_demand = True
+            self._boiler_demand = True   # force _set_boiler to act
             await self._set_boiler(False)
+
+        elif not switch_on and demand:
+            _LOGGER.warning(
+                "Watchdog: switch OFF but demand exists — forcing ON (%s)",
+                self.boiler_entity,
+            )
+            self._boiler_demand = False  # force _set_boiler to act
+            await self._set_boiler(True)
 
     async def _evaluate_boiler(self) -> None:
         """Evaluate heat demand and signal receivers.
