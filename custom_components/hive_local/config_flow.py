@@ -944,14 +944,15 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         ungrouped = self._ungrouped_trv_ids()
         devices   = self._all_devices()
 
-        # Build options: {device_id: name}
-        options = [
-            selector.SelectOptionDict(
-                value=did,
-                label=devices[did].get("name", did)
-            )
-            for did in ungrouped if did in devices
-        ]
+        # Build options — flag TRVs that have standalone on-demand enabled
+        options = []
+        for did in ungrouped:
+            if did not in devices:
+                continue
+            name    = devices[did].get("name", did)
+            linked  = devices[did].get("on_demand_enabled", False)
+            label   = f"{name}  ⚠ on-demand link will be removed" if linked else name
+            options.append(selector.SelectOptionDict(value=did, label=label))
 
         if user_input is not None:
             chosen = user_input.get("device_ids") or []
@@ -1078,6 +1079,12 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             "boost_minutes":      30,
             "receiver_device_id": getattr(self, "_room_receiver", None),
         }
+        # Clear standalone on-demand link for any TRV joining this room —
+        # the room is the unit for on-demand heating, not the individual TRV
+        store = self._store()
+        if store:
+            for did in self._room_devs:
+                await store.async_set_device_on_demand(did, False)
         c = self._coordinator()
         if c:
             await c.async_add_room(room_id, room_data)
@@ -1128,10 +1135,14 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         available = sorted(set(current_devs) | set(ungrouped))
         devices   = self._all_devices()
 
-        trv_options = [
-            selector.SelectOptionDict(value=did, label=devices[did].get("name", did))
-            for did in available if did in devices
-        ]
+        trv_options = []
+        for did in available:
+            if did not in devices:
+                continue
+            name   = devices[did].get("name", did)
+            linked = devices[did].get("on_demand_enabled", False) and did not in current_devs
+            label  = f"{name}  ⚠ on-demand link will be removed" if linked else name
+            trv_options.append(selector.SelectOptionDict(value=did, label=label))
         sensor_options = [
             selector.SelectOptionDict(value=did, label=devices[did].get("name", did))
             for did, dd in devices.items()
@@ -1149,6 +1160,12 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                     await c.async_update_room(self._edit_room_id, new_devs, new_sens)
                 # Get store first — used for all updates below
                 store = self._store()
+
+                # Clear standalone on-demand link for any TRVs newly joining the room
+                if store:
+                    added = set(new_devs) - set(current_devs)
+                    for did in added:
+                        await store.async_set_device_on_demand(did, False)
 
                 # Update frost settings
                 frost_enabled = user_input.get("frost_enabled", False)
