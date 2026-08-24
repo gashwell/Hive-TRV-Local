@@ -38,8 +38,8 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import utcnow
 
 from .const import (
-    DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
-    DOMAIN, MODEL_OTR1, MODEL_SLR1, MODEL_SLR2,
+    DEVICE_TYPE_TRV,
+    DOMAIN,
 )
 
 if TYPE_CHECKING:
@@ -55,17 +55,6 @@ _TRV_MODELS: set[str] = {
     "014G2461",    # Danfoss Ally (alternate)
     "SORB",        # Bitron TRV
     "POPP-009501", # POPP TRV
-}
-
-_RECEIVER_MODEL_MAP: dict[str, str] = {
-    # SLR1 family
-    "SLR1":  MODEL_SLR1, "SLR1b": MODEL_SLR1, "SLR1c": MODEL_SLR1,
-    "SLR1d": MODEL_SLR1,
-    # SLR2 family
-    "SLR2":  MODEL_SLR2, "SLR2b": MODEL_SLR2, "SLR2c": MODEL_SLR2,
-    "SLR2d": MODEL_SLR2,
-    # OTR1
-    "OTR1":  MODEL_OTR1,
 }
 
 DISCOVERY_INTERVAL = timedelta(minutes=5)
@@ -169,9 +158,6 @@ class HiveDiscovery:
                 "name":       friendly_name,
                 "mqtt_topic": topic,
             }
-            if device_type == DEVICE_TYPE_RECEIVER:
-                data["model"] = model
-
             _LOGGER.info(
                 "Discovery: auto-registering %s '%s' @ %s",
                 device_type, friendly_name, topic,
@@ -203,19 +189,7 @@ class HiveDiscovery:
         if model in _TRV_MODELS:
             return (DEVICE_TYPE_TRV, model, friendly)
 
-        # Receiver?
-        mapped = _RECEIVER_MODEL_MAP.get(model)
-        if mapped:
-            return (DEVICE_TYPE_RECEIVER, mapped, friendly)
-
-        # Also catch by vendor name for future Hive devices not yet in the list
-        if "hive" in vendor and model:
-            # Guess type from device type field
-            z2m_type = device.get("type", "")
-            if z2m_type in ("EndDevice", "Router"):
-                _LOGGER.debug(
-                    "Discovery: unknown Hive model %s ('%s') — skipping auto-register, "
-                    "add manually if needed",
-                    model, friendly,
-                )
+        # Receivers (SLR1/SLR2/OTR1) are no longer part of this integration.
+        # Only TRVs are auto-discovered. The ZBMINIR2 is a plain HA switch entity
+        # configured in Settings — it does not need to be discovered here.
         return None

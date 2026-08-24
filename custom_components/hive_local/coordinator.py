@@ -243,7 +243,7 @@ class HiveLocalCoordinator:
             frost_enabled  = bool(room_data.get("frost_enabled", False)),
         )
         room.receiver_device_id = room_data.get("receiver_device_id")
-        room.on_demand_enabled  = room_data.get("on_demand_enabled", True)
+        room.on_demand_enabled  = room_data.get("on_demand_enabled", False)
         room.add_listener(self._on_room_state_change)
         await room.async_setup()
         self._rooms[room_id] = room
@@ -413,7 +413,11 @@ class HiveLocalCoordinator:
             return
 
         trv_demand, calling = self._any_trv_calling()
-        room_demand = any(room.heat_required for room in self._rooms.values())
+        room_demand = any(
+            room.heat_required
+            for room in self._rooms.values()
+            if room.on_demand_enabled
+        )
         needed = trv_demand or room_demand or frost_trigger
 
         if needed:
@@ -434,7 +438,11 @@ class HiveLocalCoordinator:
         async def _drop(_now) -> None:
             self._boiler_off_timer = None
             again, _ = self._any_trv_calling()
-            if again or any(r.heat_required for r in self._rooms.values())                     or self.check_frost_protection():
+            room_still = any(
+                r.heat_required for r in self._rooms.values()
+                if r.on_demand_enabled
+            )
+            if again or room_still or self.check_frost_protection():
                 return
             await self._set_boiler(False)
 
