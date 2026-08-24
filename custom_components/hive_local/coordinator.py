@@ -19,7 +19,8 @@ from homeassistant.helpers.entity_registry import RegistryEntryHider
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import (
-    BOILER_MIN_OFF_DELAY, CONF_BOILER_ENTITY, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
+    BOILER_MIN_OFF_DELAY, CONF_BOILER_ENTITY,
+    DEVICE_TYPE_BOILER_SWITCH, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
     DOMAIN, EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED, EVENT_ROOM_UPDATED,
     TRV_DEMAND_THRESHOLD, uid_device,
 )
@@ -51,7 +52,9 @@ class HiveLocalCoordinator:
         self._boiler_demand:  bool = False
         self._receiver_demand_state: dict[str, bool] = {}  # receiver_id → last demand
         self._unsub_boiler:   list = []
-        self._boiler_off_timer = None   # pending hold-off before switching boiler off
+        self._boiler_off_timer    = None   # pending hold-off before switching boiler off
+        self._startup_complete:bool = False  # guard: don't fire boiler until settled
+        self._startup_timer       = None
         self._listeners:      list = []
 
         # Global frost protection (Open-Meteo — fires boiler independently of rooms)
@@ -110,7 +113,21 @@ class HiveLocalCoordinator:
             len(self._devices), len(self._rooms)
         )
 
+        # Allow Z2M retained messages to land before evaluating the boiler.
+        # Without this, _evaluate_boiler fires before TRV state is known and
+        # the switch gets turned on/off based on stale or default values.
+        async def _mark_ready(_now=None) -> None:
+            self._startup_timer    = None
+            self._startup_complete = True
+            _LOGGER.debug("Hive Local: startup settling complete — boiler eval now active")
+            await self._evaluate_boiler()
+
+        self._startup_timer = async_call_later(self.hass, 10, _mark_ready)
+
     async def async_unload(self) -> None:
+        if self._startup_timer:
+            self._startup_timer()
+            self._startup_timer = None
         if self._boiler_off_timer:
             self._boiler_off_timer()
             self._boiler_off_timer = None
@@ -148,21 +165,22 @@ class HiveLocalCoordinator:
 
     async def _setup_device(self, device_id: str, device_data: dict) -> None:
         dtype = device_data.get("type")
-        if dtype not in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER):
+        if dtype not in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_BOILER_SWITCH):
             return  # standalone sensor — no MQTT needed
 
         mqtt = HiveDeviceMqtt(
             hass        = self.hass,
             device_id   = device_id,
             device_type = dtype,
-            model       = device_data.get("model", "TRV"),
+            model       = device_data.get("model", ""),
             topic       = device_data.get("mqtt_topic", ""),
             name        = device_data.get("name", device_id),
         )
         self._devices[device_id] = mqtt
 
-        # Wire to boiler demand
-        mqtt.add_listener(self._on_device_state_change)
+        # Wire to boiler demand (TRVs and receivers only — not the switch itself)
+        if dtype in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER):
+            mqtt.add_listener(self._on_device_state_change)
 
         await mqtt.async_setup()
 
@@ -323,6 +341,9 @@ class HiveLocalCoordinator:
            Fires when ANY room needs heat (legacy path, still supported).
         3. Global frost protection — fires all receivers when outdoor temp too low.
         """
+        if not self._startup_complete:
+            return  # Still in settling period — don't act on incomplete state
+
         frost_trigger = self.check_frost_protection()
 
         if frost_trigger and not self._frost_active:
