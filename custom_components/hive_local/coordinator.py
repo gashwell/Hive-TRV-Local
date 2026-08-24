@@ -123,8 +123,32 @@ class HiveLocalCoordinator:
             _LOGGER.info(
                 "Hive Local: 30s startup settling complete — evaluating boiler demand"
             )
-            # Now that TRV state is known, make one clean decision.
-            # _boiler_demand is None so _set_boiler will act regardless of direction.
+
+            # ── Diagnostic dump — log every TRV state so we know what settled ──
+            for did, dd in self.store.get_all_devices().items():
+                if dd.get("type") != DEVICE_TYPE_TRV:
+                    continue
+                mqtt = self._devices.get(did)
+                if not mqtt:
+                    continue
+                room_id = self.store.room_for_device(did)
+                room    = self._rooms.get(room_id) if room_id else None
+                on_demand = (
+                    room.on_demand_enabled if room
+                    else dd.get("on_demand_enabled", False)
+                )
+                _LOGGER.info(
+                    "Startup TRV state — %s: available=%s running_state=%s "
+                    "pi_heating_demand=%s heat_required=%s on_demand_enabled=%s",
+                    dd.get("name", did),
+                    mqtt.available,
+                    mqtt.running_state,
+                    mqtt.pi_heating_demand,
+                    mqtt.heat_required,
+                    on_demand,
+                )
+
+            # Now make one clean decision with real state
             await self._evaluate_boiler()
             # Run watchdog immediately to catch any switch state left from startup
             await self._watchdog_check()
