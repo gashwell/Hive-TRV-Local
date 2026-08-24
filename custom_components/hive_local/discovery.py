@@ -47,15 +47,35 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Z2M definition model strings that map to our device types
-_TRV_MODELS: set[str] = {
-    "UK7004240",   # Hive Radiator Valve / Danfoss Ally TRV
+# Known TRV model strings — fast path only.
+# Primary detection uses Z2M exposes (see _exposes_trv below) so any
+# Z2M-supported TRV works without a code change.
+_KNOWN_TRV_MODELS: set[str] = {
+    "UK7004240",
     "TRV001",
-    "eTRV0100", "eTRV0103", "eTRV0111",  # Danfoss Ally
-    "014G2461",    # Danfoss Ally (alternate)
-    "SORB",        # Bitron TRV
-    "POPP-009501", # POPP TRV
+    "eTRV0100", "eTRV0103", "eTRV0111",
+    "014G2461",
+    "SORB",
+    "POPP-009501",
 }
+
+
+def _exposes_trv(device: dict) -> bool:
+    """True if the device exposes thermostat features via Z2M bridge/devices.
+
+    Checks for occupied_heating_setpoint (writable target temp) and
+    local_temperature (readable measured temp). Any device that exposes
+    both is a TRV regardless of make, model, or vendor.
+    """
+    exposes = (device.get("definition") or {}).get("exposes", [])
+    props: set[str] = set()
+    for expose in exposes:
+        if expose.get("name"):
+            props.add(expose["name"])
+        for feature in expose.get("features", []):
+            if feature.get("name"):
+                props.add(feature["name"])
+    return "occupied_heating_setpoint" in props and "local_temperature" in props
 
 # Z2M model strings for Sonoff relay switches used as boiler demand switches
 _BOILER_SWITCH_MODELS: set[str] = {
@@ -192,12 +212,20 @@ class HiveDiscovery:
         if friendly == "Coordinator":
             return None
 
-        # TRV?
-        if model in _TRV_MODELS:
-            return (DEVICE_TYPE_TRV, model, friendly)
-
-        # Boiler demand switch (ZBMINIR2 etc.)?
+        # Boiler demand switch?
         if model in _BOILER_SWITCH_MODELS:
             return (DEVICE_TYPE_BOILER_SWITCH, model, friendly)
+
+        # Known TRV model — fast path
+        if model in _KNOWN_TRV_MODELS and supported:
+            return (DEVICE_TYPE_TRV, model, friendly)
+
+        # Expose-based TRV detection — works for any Z2M TRV
+        if _exposes_trv(device):
+            _LOGGER.info(
+                "Discovery: detected TRV by exposes — %s (model: %s)",
+                friendly, model or "unknown",
+            )
+            return (DEVICE_TYPE_TRV, model or "TRV", friendly)
 
         return None
