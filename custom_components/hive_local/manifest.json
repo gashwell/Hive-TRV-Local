@@ -1,7 +1,7 @@
 {
   "domain": "hive_local",
   "name": "Hive Local",
-  "version": "5.0.17",
+  "version": "5.0.18",
   "documentation": "https://github.com/gashwell/Hive-TRV-Local",
   "issue_tracker": "https://github.com/gashwell/Hive-TRV-Local/issues",
   "dependencies": [],
