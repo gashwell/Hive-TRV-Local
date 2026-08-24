@@ -225,6 +225,7 @@ class HiveLocalDashboardCard extends HTMLElement {
     body.querySelectorAll('[data-configure]').forEach(el => {
       el.addEventListener('click', () => this._openConfigure());
     });
+    if (this._tab === 'settings') this._bindSettingsActions();
   }
 
   _openConfigure() {
@@ -517,11 +518,25 @@ class HiveLocalDashboardCard extends HTMLElement {
 
   _tab_settings() {
     const items = [
-      {icon:'room',     label:'Rooms',               sub:'Create and manage heating zones',          action:'configure'},
-      {icon:'trv',      label:'Devices',              sub:'Add or remove TRVs',                       action:'configure'},
-      {icon:'flame',    label:'On-demand heating',    sub:'Select rooms that trigger the ZBMINIR2',   action:'configure'},
-      {icon:'frost',    label:'Settings',             sub:'Heat demand switch, Z2M topic, frost',     action:'configure'},
+      {icon:'room',     label:'Rooms',               sub:'Create and manage heating zones',        action:'configure'},
+      {icon:'trv',      label:'Devices',              sub:'Add or remove TRVs',                     action:'configure'},
+      {icon:'flame',    label:'On-demand heating',    sub:'Select rooms that trigger the ZBMINIR2', action:'configure'},
+      {icon:'frost',    label:'Settings',             sub:'Heat demand switch, Z2M topic, frost',   action:'configure'},
     ];
+
+    const yaml = `title: Hive
+icon: mdi:radiator
+views:
+  - title: Hive Heating
+    path: hive
+    icon: mdi:radiator
+    type: sections
+    sections:
+      - type: grid
+        columns: 1
+        cards:
+          - type: custom:hive-local-dashboard-card`;
+
     let html = `<div class="list">`;
     items.forEach(item => {
       html += `<div class="set-item" data-configure>
@@ -534,8 +549,87 @@ class HiveLocalDashboardCard extends HTMLElement {
       </div>`;
     });
     html += `</div>`;
-    html += `<div style="margin-top:12px;font-size:11px;color:var(--secondary-text-color,#9ca3af);text-align:center">Hive Local v${DASH_VERSION}</div>`;
+
+    html += `
+      <div style="margin-top:16px;border:0.5px solid var(--divider-color,#e0e0e0);
+        border-radius:10px;overflow:hidden">
+        <div style="padding:12px 14px;background:var(--secondary-background-color,#f5f5f5);
+          border-bottom:0.5px solid var(--divider-color,#e0e0e0)">
+          <div style="font-size:12px;font-weight:500;color:var(--primary-text-color,#212121);
+            margin-bottom:2px">Pin to sidebar</div>
+          <div style="font-size:11px;color:var(--secondary-text-color,#727272)">
+            Add Hive as a dedicated sidebar entry with one tap
+          </div>
+        </div>
+        <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+          <button id="addDashBtn" style="
+            display:flex;align-items:center;justify-content:center;gap:8px;
+            padding:10px;border-radius:8px;border:none;
+            background:#e8632a;color:#fff;font-size:13px;font-weight:500;
+            font-family:inherit;cursor:pointer;width:100%">
+            ${ICONS.room}
+            Add Hive dashboard to sidebar
+          </button>
+          <div style="font-size:11px;color:var(--secondary-text-color,#727272);
+            text-align:center;line-height:1.5">
+            Opens the Add Dashboard dialog.<br>
+            Tick <strong>Show in sidebar</strong> then paste the config below.
+          </div>
+          <div style="position:relative">
+            <pre id="dashYaml" style="
+              background:var(--secondary-background-color,#f5f5f5);
+              border:0.5px solid var(--divider-color,#e0e0e0);
+              border-radius:8px;padding:10px 12px;
+              font-size:11px;font-family:monospace;
+              white-space:pre;overflow-x:auto;
+              color:var(--primary-text-color,#212121);
+              margin:0;line-height:1.5">${yaml}</pre>
+            <button id="copyYamlBtn" style="
+              position:absolute;top:6px;right:6px;
+              padding:3px 8px;border-radius:5px;
+              border:0.5px solid var(--divider-color,#e0e0e0);
+              background:var(--ha-card-background,#fff);
+              font-size:10px;font-family:inherit;cursor:pointer;
+              color:var(--primary-text-color,#212121)">Copy</button>
+          </div>
+        </div>
+      </div>`;
+
+    html += `<div style="margin-top:12px;font-size:11px;
+      color:var(--secondary-text-color,#9ca3af);text-align:center">
+      Hive Local v${DASH_VERSION}
+    </div>`;
+
     return html;
+  }
+
+  _bindSettingsActions() {
+    const root = this.shadowRoot;
+
+    const addBtn = root.getElementById('addDashBtn');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        window.history.pushState(null, '', '/config/lovelace/dashboards/add');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        const nav = new CustomEvent('location-changed',
+          {bubbles: true, composed: true, detail: {replace: false}});
+        root.host.dispatchEvent(nav);
+      });
+    }
+
+    const copyBtn = root.getElementById('copyYamlBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const pre = root.getElementById('dashYaml');
+        try {
+          await navigator.clipboard.writeText(pre.textContent);
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+        } catch {
+          copyBtn.textContent = 'Copy';
+        }
+      });
+    }
   }
 }
 
