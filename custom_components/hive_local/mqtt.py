@@ -184,7 +184,9 @@ class HiveDeviceMqtt:
         self.available    = True
 
         try:
-            if self.is_trv:
+            if self.device_type == "boiler_switch":
+                self._parse_boiler_switch(data)
+            elif self.is_trv:
                 self._parse_trv(data)
             elif self.model == MODEL_SLR2:
                 self._parse_slr2(data)
@@ -243,6 +245,30 @@ class HiveDeviceMqtt:
         self.preheat_status             = d.get("preheat_status")
         self.system_status_code         = d.get("system_status_code")
         self.setpoint_change_source     = d.get("setpoint_change_source")
+
+    def _parse_boiler_switch(self, d: dict) -> None:
+        """Parse ZBMINIR2 state payload — {"state": "ON"/"OFF"}."""
+        state = d.get("state")
+        if state in ("ON", "OFF"):
+            self.switch_state = state
+        power_on = d.get("power_on_behavior")
+        if power_on:
+            _LOGGER.debug("%s power_on_behavior: %s", self.name, power_on)
+
+    async def async_ensure_power_on_behavior_off(self) -> None:
+        """Set power_on_behavior to 'off' so relay starts safe after a power cut.
+
+        Called once on setup. Z2M publishes current value in the retained message
+        so we check first and only write if it needs changing.
+        """
+        current = (self.last_payload or {}).get("power_on_behavior")
+        if current == "off":
+            _LOGGER.debug("%s power_on_behavior already 'off'", self.name)
+            return
+        await self._publish('{"power_on_behavior":"off"}')
+        _LOGGER.info(
+            "%s: set power_on_behavior → off (relay safe on power-up)", self.name
+        )
 
     def _parse_slr1(self, d: dict) -> None:
         self.current_temperature = d.get("local_temperature")

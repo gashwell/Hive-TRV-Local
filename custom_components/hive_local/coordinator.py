@@ -190,6 +190,12 @@ class HiveLocalCoordinator:
 
         await mqtt.async_setup()
 
+        # Ensure ZBMINIR2 starts in safe state after power loss
+        if dtype == DEVICE_TYPE_BOILER_SWITCH:
+            from asyncio import sleep
+            await sleep(2)  # wait for retained state message to land
+            await mqtt.async_ensure_power_on_behavior_off()
+
     # ── Room management ────────────────────────────────────────────────────────
 
     async def async_add_room(self, room_id: str, room_data: dict) -> None:
