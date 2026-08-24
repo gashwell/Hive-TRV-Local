@@ -45,6 +45,15 @@ DEFAULT_TARGET_TEMP    = 20.0
 DEFAULT_Z2M_TOPIC      = "zigbee2mqtt"
 MAX_BOOST_MINUTES      = 360
 MIN_TEMP               = 5.0
+
+# Boiler demand tuning
+# A TRV counts as calling when its PI demand exceeds this percentage.
+# Raising it filters out valves trickling at 1-2% and reduces boiler cycling.
+TRV_DEMAND_THRESHOLD   = 0
+# Seconds all demand must stay clear before the boiler entity is switched off.
+# Guards against chatter when independent PI controllers cross zero at different
+# moments. Should not be shorter than the boiler's own anti-cycle time.
+BOILER_MIN_OFF_DELAY   = 300
 MAX_TEMP               = 32.0
 TEMP_STEP              = 0.5
 

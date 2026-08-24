@@ -16,12 +16,12 @@ from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryHider
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import (
-    CONF_BOILER_ENTITY, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
+    BOILER_MIN_OFF_DELAY, CONF_BOILER_ENTITY, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
     DOMAIN, EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED, EVENT_ROOM_UPDATED,
-    uid_device,
+    TRV_DEMAND_THRESHOLD, uid_device,
 )
 from .mqtt import HiveDeviceMqtt
 from .room import HiveRoom
@@ -51,6 +51,7 @@ class HiveLocalCoordinator:
         self._boiler_demand:  bool = False
         self._receiver_demand_state: dict[str, bool] = {}  # receiver_id → last demand
         self._unsub_boiler:   list = []
+        self._boiler_off_timer = None   # pending hold-off before switching boiler off
         self._listeners:      list = []
 
         # Global frost protection (Open-Meteo — fires boiler independently of rooms)
@@ -110,6 +111,9 @@ class HiveLocalCoordinator:
         )
 
     async def async_unload(self) -> None:
+        if self._boiler_off_timer:
+            self._boiler_off_timer()
+            self._boiler_off_timer = None
         for unsub in self._unsub_boiler:
             unsub()
         for mqtt in self._devices.values():
@@ -260,6 +264,43 @@ class HiveLocalCoordinator:
         )
         self._notify()
 
+    def _trv_calling(self, mqtt) -> bool:
+        """True if this TRV is currently demanding heat.
+
+        Unavailable TRVs never vote — a valve that has dropped off the mesh
+        neither holds the boiler on nor silently counts as satisfied.
+        """
+        if not mqtt.available:
+            return False
+        if mqtt.running_state == "heat" or mqtt.heat_required is True:
+            return True
+        return (
+            mqtt.pi_heating_demand is not None
+            and mqtt.pi_heating_demand > TRV_DEMAND_THRESHOLD
+        )
+
+    def _any_trv_calling(self) -> tuple[bool, list[str]]:
+        """Check every registered TRV, regardless of room or receiver assignment.
+
+        Returns (demand, names_calling). Room membership is a display grouping —
+        it must not gate whether a valve can fire the boiler.
+        """
+        calling: list[str] = []
+        unavailable: list[str] = []
+        for device_id, device_data in self.store.get_all_devices().items():
+            if device_data.get("type") != DEVICE_TYPE_TRV:
+                continue
+            mqtt = self._devices.get(device_id)
+            name = device_data.get("name", device_id)
+            if not mqtt or not mqtt.available:
+                unavailable.append(name)
+                continue
+            if self._trv_calling(mqtt):
+                calling.append(name)
+        if unavailable:
+            _LOGGER.debug("TRVs excluded from demand (unavailable): %s", unavailable)
+        return bool(calling), calling
+
     async def _evaluate_boiler(self) -> None:
         """Evaluate heat demand and signal receivers.
 
@@ -354,16 +395,54 @@ class HiveLocalCoordinator:
             except Exception as exc:
                 _LOGGER.warning("Receiver demand failed for %s: %s", receiver_id, exc)
 
-        # ── Global fallback boiler_entity ──────────────────────────────────────
+        # ── Global boiler_entity ───────────────────────────────────────────────
+        # Fires when ANY TRV calls, ANY room calls, or frost protection is active.
+        # TRVs are checked directly so a valve fires the boiler whether or not it
+        # belongs to a room and whether or not a receiver is assigned.
         if not self.boiler_entity:
             return
+
+        trv_demand, calling = self._any_trv_calling()
         room_demand = any(room.heat_required for room in self._rooms.values())
-        needed = room_demand or frost_trigger
-        if needed == self._boiler_demand:
+        needed = trv_demand or room_demand or frost_trigger
+
+        if needed:
+            # Cancel any pending off timer and fire immediately
+            if self._boiler_off_timer:
+                self._boiler_off_timer()
+                self._boiler_off_timer = None
+            if calling:
+                _LOGGER.debug("TRVs calling for heat: %s", calling)
+            await self._set_boiler(True)
             return
-        self._boiler_demand = needed
+
+        # Demand clear — hold off before dropping so independent PI controllers
+        # crossing zero at slightly different moments don't chatter the relay.
+        if not self._boiler_demand or self._boiler_off_timer:
+            return
+
+        async def _drop(_now) -> None:
+            self._boiler_off_timer = None
+            again, _ = self._any_trv_calling()
+            if again or any(r.heat_required for r in self._rooms.values())                     or self.check_frost_protection():
+                return
+            await self._set_boiler(False)
+
+        _LOGGER.debug(
+            "Demand clear — boiler off in %ss unless demand returns",
+            BOILER_MIN_OFF_DELAY,
+        )
+        self._boiler_off_timer = async_call_later(
+            self.hass, BOILER_MIN_OFF_DELAY, _drop
+        )
+
+    async def _set_boiler(self, on: bool) -> None:
+        """Drive the configured boiler entity — any HA switch/climate entity."""
+        if not self.boiler_entity or on == self._boiler_demand:
+            return
+        self._boiler_demand = on
         domain  = self.boiler_entity.split(".")[0]
-        service = "turn_on" if needed else "turn_off"
+        service = "turn_on" if on else "turn_off"
         try:
             await self.hass.services.async_call(
                 domain, service,
@@ -371,7 +450,7 @@ class HiveLocalCoordinator:
                 blocking=False,
             )
             _LOGGER.info(
-                "Boiler entity → %s (%s)", "ON" if needed else "OFF", self.boiler_entity
+                "Boiler entity → %s (%s)", "ON" if on else "OFF", self.boiler_entity
             )
         except Exception as exc:
             _LOGGER.warning("Boiler service call failed: %s", exc)
