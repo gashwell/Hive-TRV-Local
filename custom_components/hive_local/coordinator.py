@@ -120,6 +120,24 @@ class HiveLocalCoordinator:
             self._startup_timer    = None
             self._startup_complete = True
             _LOGGER.debug("Hive Local: startup settling complete — boiler eval now active")
+            # Always explicitly turn the switch off on startup regardless of
+            # _boiler_demand — it may be physically ON from a previous session.
+            # _evaluate_boiler will turn it back on immediately if demand exists.
+            if self.boiler_entity:
+                domain = self.boiler_entity.split(".")[0]
+                try:
+                    await self.hass.services.async_call(
+                        domain, "turn_off",
+                        {ATTR_ENTITY_ID: self.boiler_entity},
+                        blocking=True,
+                    )
+                    _LOGGER.info(
+                        "Startup: forced heat demand switch OFF (%s)", self.boiler_entity
+                    )
+                except Exception as exc:
+                    _LOGGER.warning("Startup turn_off failed: %s", exc)
+                finally:
+                    self._boiler_demand = False
             await self._evaluate_boiler()
 
         self._startup_timer = async_call_later(self.hass, 10, _mark_ready)

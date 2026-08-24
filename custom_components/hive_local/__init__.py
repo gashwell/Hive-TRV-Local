@@ -45,6 +45,58 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+DASHBOARD_URL_PATH = "hive-local"
+DASHBOARD_CONFIG = """title: Hive
+views:
+  - title: Hive Heating
+    path: hive
+    icon: mdi:radiator
+    type: sections
+    sections:
+      - type: grid
+        columns: 1
+        cards:
+          - type: custom:hive-local-dashboard-card
+"""
+
+
+async def _ensure_dashboard(hass: HomeAssistant) -> None:
+    """Create the Hive sidebar dashboard if it doesn't already exist."""
+    try:
+        from homeassistant.components.lovelace import dashboard as ll_dashboard
+        dashboards = hass.data.get("lovelace", {})
+
+        # Check if our dashboard already exists
+        existing = dashboards.get("dashboards", {})
+        if DASHBOARD_URL_PATH in existing:
+            return
+
+        # Create via websocket API equivalent — store directly
+        config_store = hass.config.config_dir
+        import os, yaml as _yaml
+        dash_path = os.path.join(config_store, f"dashboards/{DASHBOARD_URL_PATH}.yaml")
+        os.makedirs(os.path.dirname(dash_path), exist_ok=True)
+        if not os.path.exists(dash_path):
+            with open(dash_path, "w") as f:
+                f.write(DASHBOARD_CONFIG)
+
+        # Register the dashboard entry in lovelace storage
+        ll_data = hass.data.get("lovelace")
+        if ll_data and hasattr(ll_data, "async_create_item"):
+            await ll_data.async_create_item({
+                "url_path":        DASHBOARD_URL_PATH,
+                "title":           "Hive",
+                "icon":            "mdi:radiator",
+                "show_in_sidebar": True,
+                "require_admin":   False,
+                "filename":        f"dashboards/{DASHBOARD_URL_PATH}.yaml",
+                "mode":            "yaml",
+            })
+            _LOGGER.info("Hive Local: created Hive sidebar dashboard")
+    except Exception as exc:
+        _LOGGER.debug("Hive Local: dashboard auto-create skipped: %s", exc)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     opts   = entry.options or {}
     data   = entry.data    or {}
