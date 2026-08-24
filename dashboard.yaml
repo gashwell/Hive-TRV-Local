@@ -1,0 +1,19 @@
+# Hive Local Dashboard
+# Copy this file to your HA config directory and import it, or
+# paste the content into a new dashboard via Edit → Raw configuration editor.
+#
+# Requirements:
+#   - Hive Local integration installed and configured
+#   - No extra card configuration needed — reads all hive_local entities automatically
+
+title: Hive
+views:
+  - title: Heating
+    path: hive
+    icon: mdi:radiator
+    type: sections
+    sections:
+      - type: grid
+        columns: 1
+        cards:
+          - type: custom:hive-local-dashboard-card
