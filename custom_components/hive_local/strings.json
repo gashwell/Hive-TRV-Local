@@ -44,7 +44,6 @@
         "title": "Devices",
         "menu_options": {
           "add_trv": "Add a TRV",
-          "add_receiver": "Add a receiver",
           "add_sensor": "Add a temperature sensor",
           "remove_device": "Remove a device"
         }
@@ -158,16 +157,6 @@
           "room_id": "Room"
         }
       },
-      "room_receiver": {
-        "title": "Create Room \u2014 Step 4 of 4",
-        "description": "Assign a receiver to: {room_name}\n\n{hint}",
-        "data": {
-          "receiver_device_id": "Receiver / boiler"
-        },
-        "data_description": {
-          "receiver_device_id": "When any TRV in this room calls for heat, this receiver will be commanded to heat. Select None to use the global boiler entity configured in Settings."
-        }
-      },
       "link_trv_receiver": {
         "title": "Link TRV to receiver \u2014 step 1 of 2",
         "description": "{hint}",
@@ -191,12 +180,8 @@
       "on_demand_heating": {
         "title": "On-demand heating",
         "description": "{hint}",
-        "data": {
-          "targets": "TRVs and rooms"
-        },
-        "data_description": {
-          "targets": "Select one or more. Current receiver shown next to each name."
-        }
+        "data": {},
+        "data_description": {}
       },
       "assign_receiver": {
         "title": "Link to receiver",

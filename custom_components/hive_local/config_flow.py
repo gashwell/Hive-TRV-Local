@@ -332,7 +332,6 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
             step_id="manage_devices",
             menu_options={
                 "add_trv":       "Add a TRV",
-                "add_receiver":  "Add a receiver (SLR1 / SLR2 / OTR1)",
                 "add_sensor":    "Add a temperature sensor",
                 "remove_device": "Remove a device",
             },
@@ -537,87 +536,23 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
     # ── On-demand heating ─────────────────────────────────────────────────────
 
     async def async_step_on_demand_heating(self, user_input: dict | None = None) -> config_entries.FlowResult:
-        """Top-level on-demand heating menu.
-
-        Shows all registered TRVs and rooms with their current receiver link,
-        then lets the user pick which one to configure.
-        """
-        store     = self._store()
-        devices   = self._all_devices()
-        rooms     = self._all_rooms()
-        receivers = self._registered_receivers()
-
-        options: dict[str, str] = {}
-
-        # Rooms first
-        for rid, rd in sorted(rooms.items(), key=lambda x: x[1].get("name","")):
-            name     = rd.get("name", rid)
-            recv_id  = rd.get("receiver_device_id","")
-            recv_lbl = receivers.get(recv_id, "not linked") if recv_id else "not linked"
-            options[f"room:{rid}"] = f"{name}  →  {recv_lbl}"
-
-        # Individual TRVs
-        for did, dd in sorted(devices.items(), key=lambda x: x[1].get("name","")):
-            if dd.get("type") != DEVICE_TYPE_TRV:
-                continue
-            name     = dd.get("name", did)
-            recv_id  = dd.get("receiver_device_id","")
-            recv_lbl = receivers.get(recv_id, "not linked") if recv_id else "not linked"
-            in_room  = store.room_for_device(did) if store else None
-            room_tag = f" (in room)" if in_room else " (standalone)"
-            options[f"trv:{did}"] = f"{name}{room_tag}  →  {recv_lbl}"
-
-        if not options:
-            return self.async_show_form(
-                step_id="on_demand_heating",
-                data_schema=vol.Schema({}),
-                description_placeholders={
-                    "hint": "No TRVs or rooms configured yet. Add a TRV first via Devices."
-                },
-            )
-
-        if not receivers:
-            return self.async_show_form(
-                step_id="on_demand_heating",
-                data_schema=vol.Schema({}),
-                description_placeholders={
-                    "hint": "No receiver registered yet. Add a receiver first via Devices."
-                },
-            )
-
-        # Handle selection — multiple targets can be selected at once
+        """On-demand heating — redirect to Settings where the ZBMINIR2 is configured."""
         if user_input is not None:
-            targets = user_input.get("targets") or []
-            self._on_demand_targets = targets
-            return await self.async_step_assign_receiver()
+            return await self.async_step_settings()
 
         return self.async_show_form(
             step_id="on_demand_heating",
-            data_schema=vol.Schema({
-                vol.Required("targets"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value=k, label=v)
-                            for k, v in options.items()
-                        ],
-                        multiple=True,
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-            }),
+            data_schema=vol.Schema({}),
             description_placeholders={
                 "hint": (
-                    "Select one or more TRVs or rooms. "
-                    "Current receiver link shown next to each name. "
-                    "You can select multiple TRVs to link them all to the same receiver at once."
+                    "The Sonoff ZBMINIR2 is your heat demand switch. "
+                    "Configure it once in Settings → Heat demand switch. "
+                    "When any TRV calls for heat, the switch fires automatically. "
+                    "\n\nPress Next to go to Settings."
                 ),
             },
         )
 
-    async def async_step_on_demand_heating_confirm(
-        self, user_input: dict | None = None
-    ) -> config_entries.FlowResult:
-        pass  # handled inline in on_demand_heating step below
 
     # ── Shared receiver assignment step ───────────────────────────────────────
 
@@ -952,7 +887,7 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
         """Optionally pick standalone temperature sensors for this room."""
         if user_input is not None:
             self._room_sensors = user_input.get("sensor_ids") or []
-            return await self.async_step_room_receiver()
+            return await self._do_create_room()
 
         # Get registered sensor devices
         devices = self._all_devices()
@@ -1112,15 +1047,6 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                 # Get store first — used for all updates below
                 store = self._store()
 
-                # Update receiver assignment
-                new_receiver = user_input.get("receiver_device_id") or None
-                if store:
-                    rd2 = dict(store.get_room(self._edit_room_id) or {})
-                    rd2["receiver_device_id"] = new_receiver
-                    await store.async_save_room(self._edit_room_id, rd2)
-                if c:
-                    c.assign_room_receiver(self._edit_room_id, new_receiver)
-
                 # Update frost settings
                 frost_enabled = user_input.get("frost_enabled", False)
                 frost_temp    = float(user_input.get("frost_temperature", 2.0))
@@ -1172,24 +1098,6 @@ class HiveLocalOptionsFlow(config_entries.OptionsFlow):
                     min=-10, max=10, step=0.5,
                     unit_of_measurement="°C",
                     mode=selector.NumberSelectorMode.SLIDER,
-                )
-            )
-
-        # Receiver selector
-        receivers = self._registered_receivers()
-        current_receiver = room_data.get("receiver_device_id", "")
-        if receivers:
-            recv_options = [selector.SelectOptionDict(value="", label="None")]
-            recv_options += [
-                selector.SelectOptionDict(value=did, label=name)
-                for did, name in sorted(receivers.items(), key=lambda x: x[1])
-            ]
-            schema[vol.Optional("receiver_device_id", default=current_receiver or "")] = (
-                selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=recv_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
                 )
             )
 

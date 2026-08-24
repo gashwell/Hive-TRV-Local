@@ -135,15 +135,6 @@ class HiveLocalPanelCard extends HTMLElement {
       (s.attributes.pi_heating_demand !== undefined || s.attributes.battery !== undefined)
     );
 
-    // Receiver entities — have running_state and no member_detail and no battery
-    const recvEntities = Object.values(states).filter(s =>
-      s.entity_id.startsWith('climate.') &&
-      !Array.isArray(s.attributes.member_detail) &&
-      s.attributes.running_state !== undefined &&
-      s.attributes.battery === undefined &&
-      s.attributes.pi_heating_demand === undefined
-    );
-
     // Build set of TRVs that are in rooms (hidden) — detect via member_detail names
     const groupedNames = new Set();
     rooms.forEach(r => {
@@ -157,26 +148,8 @@ class HiveLocalPanelCard extends HTMLElement {
     });
 
     // Receivers with no room linked — detect by checking room attributes
-    const linkedReceiverEntities = new Set();
-    rooms.forEach(r => {
-      const recvName = (r.attributes.receiver_name || '');
-      if (recvName) linkedReceiverEntities.add(recvName);
-    });
-
     // Warnings
     const warnings = [];
-    if (recvEntities.length > 0 && rooms.length === 0) {
-      warnings.push('No rooms configured — create a room and link your receiver to enable on-demand heating.');
-    }
-    recvEntities.forEach(r => {
-      const name = r.attributes.friendly_name || r.entity_id;
-      const linked = rooms.some(room =>
-        (room.attributes.receiver_name || '') === name
-      );
-      if (!linked) {
-        warnings.push(`${name} is not linked to any room — edit a room to assign it.`);
-      }
-    });
 
     // ── Build HTML ─────────────────────────────────────────────────────────
     let html = '<div class="panel" id="panel">';
@@ -213,9 +186,7 @@ class HiveLocalPanelCard extends HTMLElement {
             : r.state === 'off'
               ? badge('off', 'off')
               : badge('idle', 'idle');
-        const recvBadgeRoom = recv
-          ? badge(recv, 'recv')
-          : `<span class="badge" style="background:#fff7ed;color:#c2410c;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:500">link receiver</span>`;
+
 
         const meta = [
           `${members.length} TRV${members.length !== 1 ? 's' : ''}`,
@@ -234,7 +205,6 @@ class HiveLocalPanelCard extends HTMLElement {
             <div class="row-top">
               <span class="row-name">${attrs.friendly_name || r.entity_id}</span>
               ${statusBadge}
-              ${recvBadgeRoom}
             </div>
             <div class="row-meta">${meta}</div>
             ${memberTemps ? `<div class="row-meta" style="margin-top:1px">${memberTemps}</div>` : ''}
@@ -271,9 +241,7 @@ class HiveLocalPanelCard extends HTMLElement {
           recvLinked ? `→ ${recvLinked}` : 'no receiver linked',
         ].filter(Boolean).join(' · ');
 
-        const recvBadgeTrv = recvLinked
-          ? badge(recvLinked, 'recv')
-          : `<span class="badge" style="background:#fff7ed;color:#c2410c;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:500">link receiver</span>`;
+
 
         html += `<div class="row" data-navigate="${s.entity_id}">
           <div class="dot" style="background:${heating ? '#e8632a' : '#c8c8c8'}"></div>
@@ -282,56 +250,10 @@ class HiveLocalPanelCard extends HTMLElement {
             <div class="row-top">
               <span class="row-name">${attrs.friendly_name || s.entity_id}</span>
               ${badge('ungrouped', 'solo')}
-              ${recvBadgeTrv}
             </div>
             <div class="row-meta">${meta}</div>
           </div>
           ${cur != null ? `<span class="temp">${parseFloat(cur).toFixed(1)}°</span>` : ''}
-          ${chev()}
-        </div>`;
-      });
-
-      html += `</div></div>`;
-    }
-
-    // ── Receivers ──────────────────────────────────────────────────────────
-    if (recvEntities.length) {
-      html += `<div class="section">
-        <div class="section-hdr">
-          <span class="section-title">Receivers</span>
-        </div>
-        <div class="card">`;
-
-      recvEntities.forEach(r => {
-        const attrs   = r.attributes;
-        const heating = attrs.hvac_action === 'heating' || attrs.running_state === 'heat';
-        const model   = attrs.model || '';
-        const cur     = attrs.current_temperature;
-
-        // Find which room is demanding this receiver
-        const demandingRoom = rooms.find(room =>
-          room.attributes.receiver_name === (attrs.friendly_name || '') &&
-          room.attributes.heat_required
-        );
-
-        const meta = [
-          heating ? 'heating' : 'idle',
-          cur != null ? `${parseFloat(cur).toFixed(1)}°` : null,
-          demandingRoom
-            ? `${demandingRoom.attributes.friendly_name || ''} demanding`
-            : null,
-        ].filter(Boolean).join(' · ');
-
-        html += `<div class="row" data-navigate="${r.entity_id}">
-          <div class="dot" style="background:${heating ? '#e8632a' : '#c8c8c8'}"></div>
-          <div class="icon icon-recv">${ICONS.recv}</div>
-          <div class="row-body">
-            <div class="row-top">
-              <span class="row-name">${attrs.friendly_name || r.entity_id}</span>
-              ${model ? badge(model, 'recv') : ''}
-            </div>
-            <div class="row-meta">${meta}</div>
-          </div>
           ${chev()}
         </div>`;
       });
@@ -369,14 +291,7 @@ class HiveLocalPanelCard extends HTMLElement {
           </div>
           ${chev()}
         </div>
-        <div class="row" data-action="link_receiver">
-          <div class="icon icon-recv">${ICONS.recv}</div>
-          <div class="row-body">
-            <div class="row-name">Link TRV or room to receiver</div>
-            <div class="row-meta">Configure on-demand heating for any TRV or room</div>
-          </div>
-          ${chev()}
-        </div>
+
       </div>
     </div>`;
 
