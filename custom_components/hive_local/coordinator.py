@@ -126,7 +126,9 @@ class HiveLocalCoordinator:
             # Now that TRV state is known, make one clean decision.
             # _boiler_demand is None so _set_boiler will act regardless of direction.
             await self._evaluate_boiler()
-            # Start watchdog — checks every 20s that the switch state matches demand
+            # Run watchdog immediately to catch any switch state left from startup
+            await self._watchdog_check()
+            # Then keep checking every 20s
             from homeassistant.helpers.event import async_track_time_interval
             from datetime import timedelta
             self._watchdog_unsub = async_track_time_interval(
@@ -369,7 +371,7 @@ class HiveLocalCoordinator:
         )
 
     async def _watchdog_check(self) -> None:
-        if not self._startup_complete or not self.boiler_entity:
+        if not self.boiler_entity:
             return
 
         # Determine what the switch state actually is right now
