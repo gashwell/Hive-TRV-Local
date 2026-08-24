@@ -381,29 +381,54 @@ class HiveLocalCoordinator:
         switch_on = switch_entity.state in ("on", "ON", "heat")
 
         # Evaluate actual demand
-        frost          = self.check_frost_protection()
-        trv_demand, _ = self._any_trv_calling()
-        room_demand    = any(
-            r.heat_required for r in self._rooms.values()
-            if r.on_demand_enabled
-        )
-        demand = trv_demand or room_demand or frost
+        frost                   = self.check_frost_protection()
+        trv_demand, calling_trvs = self._any_trv_calling()
+        calling_rooms = [
+            r.room_name for r in self._rooms.values()
+            if r.on_demand_enabled and r.heat_required
+        ]
+        room_demand = bool(calling_rooms)
+        demand      = trv_demand or room_demand or frost
 
         if switch_on and not demand:
             _LOGGER.warning(
-                "Watchdog: switch ON but no demand — forcing OFF (%s)",
+                "Watchdog: switch ON but no demand — forcing OFF (%s). "
+                "TRVs calling: none. Rooms calling: none. Frost: %s",
                 self.boiler_entity,
+                frost,
             )
-            self._boiler_demand = True   # force _set_boiler to act
+            self._boiler_demand = True
             await self._set_boiler(False)
 
         elif not switch_on and demand:
+            sources = []
+            if calling_trvs:
+                sources.append(f"TRVs: {', '.join(calling_trvs)}")
+            if calling_rooms:
+                sources.append(f"Rooms: {', '.join(calling_rooms)}")
+            if frost:
+                sources.append("frost protection")
             _LOGGER.warning(
-                "Watchdog: switch OFF but demand exists — forcing ON (%s)",
+                "Watchdog: switch OFF but demand exists — forcing ON (%s). "
+                "Demand from: %s",
                 self.boiler_entity,
+                " | ".join(sources),
             )
-            self._boiler_demand = False  # force _set_boiler to act
+            self._boiler_demand = False
             await self._set_boiler(True)
+
+        elif switch_on and demand:
+            sources = []
+            if calling_trvs:
+                sources.append(f"TRVs: {', '.join(calling_trvs)}")
+            if calling_rooms:
+                sources.append(f"Rooms: {', '.join(calling_rooms)}")
+            if frost:
+                sources.append("frost protection")
+            _LOGGER.debug(
+                "Watchdog: switch ON with valid demand from %s",
+                " | ".join(sources),
+            )
 
     async def _evaluate_boiler(self) -> None:
         """Evaluate heat demand and signal receivers.
