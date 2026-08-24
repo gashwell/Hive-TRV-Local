@@ -55,6 +55,7 @@ class HiveLocalCoordinator:
         self._boiler_off_timer    = None   # pending hold-off before switching boiler off
         self._startup_complete:bool = False  # guard: don't fire boiler until settled
         self._startup_timer       = None
+        self._watchdog_unsub      = None   # periodic switch-state watchdog
         self._listeners:      list = []
 
         # Global frost protection (Open-Meteo — fires boiler independently of rooms)
@@ -125,12 +126,22 @@ class HiveLocalCoordinator:
             # Now that TRV state is known, make one clean decision.
             # _boiler_demand is None so _set_boiler will act regardless of direction.
             await self._evaluate_boiler()
+            # Start watchdog — checks every 20s that the switch state matches demand
+            from homeassistant.helpers.event import async_track_time_interval
+            from datetime import timedelta
+            self._watchdog_unsub = async_track_time_interval(
+                self.hass, self._watchdog, timedelta(seconds=20)
+            )
+            _LOGGER.debug("Hive Local: boiler watchdog started (20s interval)")
 
         # 30 seconds — enough for Z2M to replay all retained device state messages
         # even on slow hardware or a busy broker.
         self._startup_timer = async_call_later(self.hass, 30, _mark_ready)
 
     async def async_unload(self) -> None:
+        if self._watchdog_unsub:
+            self._watchdog_unsub()
+            self._watchdog_unsub = None
         if self._startup_timer:
             self._startup_timer()
             self._startup_timer = None
@@ -342,6 +353,51 @@ class HiveLocalCoordinator:
         if unavailable:
             _LOGGER.debug("TRVs excluded from demand (unavailable): %s", unavailable)
         return bool(calling), calling
+
+    @callback
+    def _watchdog(self, _now=None) -> None:
+        """Periodic safety check — runs every 20 seconds after startup settling.
+
+        If the ZBMINIR2 is ON but neither TRV demand nor frost protection
+        justifies it, turn it off immediately. This catches:
+        - Switch stuck ON from a previous session
+        - Any state drift caused by external actors (manual toggle, HA automation)
+        - Cases where the hold-off timer fired but _set_boiler was skipped
+        """
+        self.hass.async_create_task(
+            self._watchdog_check(), name="hive_local_watchdog"
+        )
+
+    async def _watchdog_check(self) -> None:
+        if not self._startup_complete or not self.boiler_entity:
+            return
+
+        # Determine what the switch state actually is right now
+        switch_entity = self.hass.states.get(self.boiler_entity)
+        if switch_entity is None:
+            return
+        switch_on = switch_entity.state in ("on", "ON", "heat")
+
+        if not switch_on:
+            return  # Already off — nothing to check
+
+        # Switch is ON — verify demand justifies it
+        frost          = self.check_frost_protection()
+        trv_demand, _ = self._any_trv_calling()
+        room_demand    = any(
+            r.heat_required for r in self._rooms.values()
+            if r.on_demand_enabled
+        )
+        justified = trv_demand or room_demand or frost
+
+        if not justified:
+            _LOGGER.warning(
+                "Watchdog: switch is ON but no demand exists — forcing OFF (%s)",
+                self.boiler_entity,
+            )
+            # Reset _boiler_demand so _set_boiler won't skip the call
+            self._boiler_demand = True
+            await self._set_boiler(False)
 
     async def _evaluate_boiler(self) -> None:
         """Evaluate heat demand and signal receivers.
