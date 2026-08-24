@@ -19,6 +19,25 @@ TPL.innerHTML = `
   :host{display:block;font-family:var(--paper-font-body1_-_font-family,sans-serif)}
   *{box-sizing:border-box;margin:0;padding:0}
   .panel{padding:0 0 24px}
+  .boiler-status{display:flex;align-items:center;gap:12px;padding:12px 14px;
+    border-radius:12px;margin-bottom:12px;border:0.5px solid}
+  .boiler-on{background:#fff7f0;border-color:#e8632a}
+  .boiler-off{background:var(--ha-card-background,#fff);border-color:var(--divider-color,#e0e0e0)}
+  .boiler-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;
+    justify-content:center;flex-shrink:0}
+  .boiler-on .boiler-icon{background:#fde8d8;color:#e8632a}
+  .boiler-off .boiler-icon{background:#f5f5f5;color:#9ca3af}
+  .boiler-icon svg{width:16px;height:16px;stroke:currentColor;fill:none;
+    stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .boiler-text{flex:1}
+  .boiler-label{font-size:11px;color:var(--secondary-text-color,#727272)}
+  .boiler-state{font-size:16px;font-weight:600}
+  .boiler-on .boiler-state{color:#e8632a}
+  .boiler-off .boiler-state{color:var(--secondary-text-color,#727272)}
+  .boiler-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:#c8c8c8}
+  .boiler-on .boiler-dot{background:#e8632a}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .pulse{animation:pulse 1.5s ease-in-out infinite}
   .warning{font-size:12px;color:#92400e;background:#fffbeb;
     border:0.5px solid #fcd34d;border-radius:8px;
     padding:8px 12px;margin-bottom:12px;
@@ -121,6 +140,19 @@ class HiveLocalPanelCard extends HTMLElement {
     // ── Gather all hive_local entities from HA states ──────────────────────
     const states = this._hass.states;
 
+    // Boiler switch state — find the ZBMINIR2 switch entity
+    // Either a switch entity we discover directly, or read from boiler_entity config
+    const boilerSwitches = Object.values(states).filter(s =>
+      s.entity_id.startsWith('binary_sensor.') &&
+      s.attributes.device_class === 'heat' &&
+      (s.attributes.friendly_name || '').toLowerCase().includes('heating')
+    );
+    const boilerSwitch  = boilerSwitches[0] || null;
+    const boilerOn      = boilerSwitch ? boilerSwitch.state === 'on' : null;
+    const boilerName    = boilerSwitch
+      ? (boilerSwitch.attributes.friendly_name || boilerSwitch.entity_id)
+      : null;
+
     // Room climate entities — have member_detail attribute
     const rooms = Object.values(states).filter(s =>
       s.entity_id.startsWith('climate.') &&
@@ -158,6 +190,19 @@ class HiveLocalPanelCard extends HTMLElement {
     warnings.forEach(w => {
       html += `<div class="warning">${ICONS.warn}<span>${w}</span></div>`;
     });
+
+    // Boiler status — most prominent element
+    if (boilerOn !== null) {
+      html += `
+        <div class="boiler-status ${boilerOn ? 'boiler-on' : 'boiler-off'}">
+          <div class="boiler-icon">${boilerOn ? ICONS.recv : ICONS.z2m}</div>
+          <div class="boiler-text">
+            <div class="boiler-label">Boiler</div>
+            <div class="boiler-state">${boilerOn ? 'Heating' : 'Idle'}</div>
+          </div>
+          <div class="boiler-dot ${boilerOn ? 'pulse' : ''}"></div>
+        </div>`;
+    }
 
     // ── Rooms ──────────────────────────────────────────────────────────────
     html += `<div class="section">

@@ -40,6 +40,9 @@ class HiveDeviceMqtt:
     hvac_action:            HVACAction | None = None
     running_state:          str        = "idle"
 
+    # Boiler switch specific (ZBMINIR2)
+    switch_state:           str | None = None   # "ON" | "OFF"
+
     # TRV-specific
     battery:                int | None = None
     pi_heating_demand:      int | None = None

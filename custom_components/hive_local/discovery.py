@@ -38,7 +38,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import utcnow
 
 from .const import (
-    DEVICE_TYPE_TRV,
+    DEVICE_TYPE_BOILER_SWITCH, DEVICE_TYPE_TRV,
     DOMAIN,
 )
 
@@ -55,6 +55,13 @@ _TRV_MODELS: set[str] = {
     "014G2461",    # Danfoss Ally (alternate)
     "SORB",        # Bitron TRV
     "POPP-009501", # POPP TRV
+}
+
+# Z2M model strings for Sonoff relay switches used as boiler demand switches
+_BOILER_SWITCH_MODELS: set[str] = {
+    "ZBMINIR2",   # Sonoff ZBMINI R2
+    "ZBMINI",     # Sonoff ZBMINI
+    "ZBMINIL2",   # Sonoff ZBMINI-L2
 }
 
 DISCOVERY_INTERVAL = timedelta(minutes=5)
@@ -189,7 +196,8 @@ class HiveDiscovery:
         if model in _TRV_MODELS:
             return (DEVICE_TYPE_TRV, model, friendly)
 
-        # Receivers (SLR1/SLR2/OTR1) are no longer part of this integration.
-        # Only TRVs are auto-discovered. The ZBMINIR2 is a plain HA switch entity
-        # configured in Settings — it does not need to be discovered here.
+        # Boiler demand switch (ZBMINIR2 etc.)?
+        if model in _BOILER_SWITCH_MODELS:
+            return (DEVICE_TYPE_BOILER_SWITCH, model, friendly)
+
         return None

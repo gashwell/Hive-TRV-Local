@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DATA_COORDINATOR, DEVICE_TYPE_TRV, DOMAIN, uid_device
+from .const import DATA_COORDINATOR, DEVICE_TYPE_BOILER_SWITCH, DEVICE_TYPE_TRV, DOMAIN, uid_device
 from .coordinator import HiveLocalCoordinator
 from .mqtt import HiveDeviceMqtt
 
@@ -61,6 +61,9 @@ async def async_setup_entry(
         entities.append(HiveTRVAdaptationStatusSensor(device_id, device_data, mqtt))
         entities.append(HiveTRVSystemStatusSensor(device_id, device_data, mqtt))
 
+        if device_data.get("type") == DEVICE_TYPE_BOILER_SWITCH:
+            entities.append(HiveBoilerSwitchSensor(device_id, device_data, mqtt))
+
     async_add_entities(entities)
 
     @callback
@@ -81,6 +84,8 @@ async def async_setup_entry(
         new.append(HiveTRVWindowInternalSensor(device_id, device_data, mqtt))
         new.append(HiveTRVAdaptationStatusSensor(device_id, device_data, mqtt))
         new.append(HiveTRVSystemStatusSensor(device_id, device_data, mqtt))
+        if device_data.get("type") == DEVICE_TYPE_BOILER_SWITCH:
+            new.append(HiveBoilerSwitchSensor(device_id, device_data, mqtt))
         async_add_entities(new)
 
     entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_device_added", _on_device_added))
@@ -171,3 +176,25 @@ class HiveTRVSystemStatusSensor(_HiveBase, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return self._mqtt.system_status_code
+
+
+class HiveBoilerSwitchSensor(_HiveBase, BinarySensorEntity):
+    """Shows whether the boiler demand switch (ZBMINIR2) is ON or OFF.
+
+    This is the single most important status in the integration —
+    visible on the device page and readable in the panel card.
+    """
+    _attr_device_class    = BinarySensorDeviceClass.HEAT
+    _attr_icon            = "mdi:fire"
+
+    def __init__(self, device_id: str, device_data: dict, mqtt) -> None:
+        super().__init__(device_id, device_data, mqtt)
+        self._attr_unique_id = uid_device(device_id, "boiler_state")
+        self._attr_name      = f"{device_data.get('name', device_id)} Heating"
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self._mqtt.switch_state
+        if state is None:
+            return None
+        return state == "ON"
