@@ -1,0 +1,81 @@
+# Heating demand logger
+# Creates readable logbook entries showing which TRV triggered heat demand
+# and when demand cleared. View in the Diagnostics tab history-graph or logbook.
+#
+# Also creates a persistent notification so you can see the last trigger
+# from the HA notification bell without opening the dashboard.
+
+alias: Heating demand logger
+description: Logs which TRV triggered heat demand and when it cleared.
+mode: parallel
+max: 20
+
+trigger:
+  - platform: state
+    entity_id:
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
+      - climate.hive_trv_kitchen
+      - climate.hive_trv_bedroom
+      - climate.hive_trv_office
+      - climate.hive_trv_guestroom
+      - climate.hive_trv_garage
+      - climate.hive_trv_conservatory
+      - climate.hive_trv_entrance
+      - climate.hive_trv_hallway
+    attribute: hvac_action
+
+variables:
+  trv_name: >
+    {{ {
+      'climate.hive_trv_tv':           'TV Radiator',
+      'climate.hive_trv_bay':          'Bay Radiator',
+      'climate.hive_trv_dining':       'Dining Radiator',
+      'climate.hive_trv_kitchen':      'Kitchen',
+      'climate.hive_trv_bedroom':      'Bedroom',
+      'climate.hive_trv_office':       'Office',
+      'climate.hive_trv_guestroom':    'Guest Room',
+      'climate.hive_trv_garage':       'Garage',
+      'climate.hive_trv_conservatory': 'Conservatory',
+      'climate.hive_trv_entrance':     'Entrance',
+      'climate.hive_trv_hallway':      'Hallway'
+    }[trigger.entity_id] }}
+  current_temp: >
+    {{ state_attr(trigger.entity_id, 'current_temperature') | float(0) | round(1) }}
+  target_temp: >
+    {{ state_attr(trigger.entity_id, 'temperature') | float(0) | round(1) }}
+  demand_pct: >
+    {{ state_attr(trigger.entity_id, 'pi_heating_demand') | int(0) }}
+  now_heating: >
+    {{ trigger.to_state.attributes.get('hvac_action') == 'heating' }}
+
+action:
+  - choose:
+
+      # TRV started heating
+      - conditions:
+          - condition: template
+            value_template: "{{ now_heating }}"
+        sequence:
+          - service: logbook.log
+            data:
+              name: Heating demand
+              message: >
+                {{ trv_name }} requesting heat —
+                room {{ current_temp }}°C, target {{ target_temp }}°C,
+                demand {{ demand_pct }}%
+              entity_id: "{{ trigger.entity_id }}"
+
+      # TRV stopped heating
+      - conditions:
+          - condition: template
+            value_template: "{{ not now_heating }}"
+        sequence:
+          - service: logbook.log
+            data:
+              name: Heating demand
+              message: >
+                {{ trv_name }} satisfied —
+                room {{ current_temp }}°C, target {{ target_temp }}°C
+              entity_id: "{{ trigger.entity_id }}"
