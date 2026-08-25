@@ -1,8 +1,7 @@
 alias: Boiler ON — any TRV demands heat
 description: >
-  Turns the boiler on when any TRV heat_required goes on.
-  Ignores spurious MQTT state changes (e.g. from Z2M OTA update checks)
-  by only acting on heat_required sensor triggers, not the switch state.
+  Turns the boiler on immediately when any TRV heat_required goes on.
+  heat_required is set by the TRV firmware after the valve has opened.
 mode: single
 trigger:
   - platform: state
@@ -19,24 +18,7 @@ trigger:
       - binary_sensor.hive_trv_entrance_heat_required
       - binary_sensor.hive_trv_hallway_heat_required
     to: "on"
-condition:
-  # Verify at least one heat_required is genuinely on at time of action
-  # This guards against any race conditions or spurious triggers
-  - condition: template
-    value_template: >
-      {{ states | selectattr('entity_id', 'in', [
-          'binary_sensor.hive_trv_tv_heat_required',
-          'binary_sensor.hive_trv_bay_heat_required',
-          'binary_sensor.hive_trv_dining_heat_required',
-          'binary_sensor.hive_trv_kitchen_heat_required',
-          'binary_sensor.hive_trv_bedroom_heat_required',
-          'binary_sensor.hive_trv_office_heat_required',
-          'binary_sensor.hive_trv_guestroom_heat_required',
-          'binary_sensor.hive_trv_garage_heat_required',
-          'binary_sensor.hive_trv_conservatory_heat_required',
-          'binary_sensor.hive_trv_entrance_heat_required',
-          'binary_sensor.hive_trv_hallway_heat_required'
-      ]) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+condition: []
 action:
   - service: logbook.log
     data:
