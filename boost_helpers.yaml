@@ -37,8 +37,8 @@ input_boolean:
 input_number:
   boost_living_room_temp:
     name: Boost Living Room temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -54,8 +54,8 @@ input_number:
 
   boost_bedroom_temp:
     name: Boost Bedroom temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -71,8 +71,8 @@ input_number:
 
   boost_kitchen_temp:
     name: Boost Kitchen temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -88,8 +88,8 @@ input_number:
 
   boost_office_temp:
     name: Boost Office temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -105,8 +105,8 @@ input_number:
 
   boost_hallway_temp:
     name: Boost Hallway temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -122,8 +122,8 @@ input_number:
 
   boost_entrance_temp:
     name: Boost Entrance temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -139,8 +139,8 @@ input_number:
 
   boost_guestroom_temp:
     name: Boost Guest Room temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -156,8 +156,8 @@ input_number:
 
   boost_conservatory_temp:
     name: Boost Conservatory temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
@@ -173,8 +173,8 @@ input_number:
 
   boost_garage_temp:
     name: Boost Garage temp
-    min: 16
-    max: 28
+    min: 1
+    max: 32
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
