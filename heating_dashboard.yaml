@@ -26,14 +26,20 @@ views:
       - type: grid
         columns: 1
         cards:
-          - type: thermostat
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_group_living_room
             name: Living Room (TV · Bay · Dining)
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_group_living_room', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
 
       # Living room — individual TRVs with flame badge when heating
       - type: grid
