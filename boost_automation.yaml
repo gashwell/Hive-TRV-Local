@@ -1,67 +1,27 @@
-# Boost automations
-# The UK7004240 TRV handles the boost countdown natively in firmware.
-# All four fields must be sent in a single MQTT payload — the device
-# ignores partial payloads for mode changes.
-# To cancel: send system_mode:heat + temperature_setpoint_hold:0
+# Per-room boost automations
+# One trigger per room — each input_boolean fires boost for its room independently
+# Rooms can be boosted simultaneously
 
-alias: Heating — Apply boost
-description: >
-  Sends a single MQTT boost payload to all TRVs in the selected room.
-  The TRV firmware handles the countdown and cancels itself when done.
+alias: Heating — Boost Living Room
 mode: restart
 trigger:
   - platform: state
-    entity_id: input_boolean.heating_boost_active
+    entity_id: input_boolean.boost_living_room
     to: "on"
-variables:
-  room: "{{ states('input_select.heating_boost_room') }}"
-  duration: "{{ states('input_number.heating_boost_duration') | int }}"
-  temperature: "{{ states('input_number.heating_boost_temperature') | float }}"
-  room_trvs:
-    Living Room:
-      - zigbee2mqtt/Hive TRV TV/set
-      - zigbee2mqtt/Hive TRV Bay/set
-      - zigbee2mqtt/Hive TRV Dining/set
-    Bedroom:
-      - zigbee2mqtt/Hive TRV Bedroom/set
-    Kitchen:
-      - zigbee2mqtt/Hive TRV Kitchen/set
-    Office:
-      - zigbee2mqtt/Hive TRV Office/set
-    Hallway:
-      - zigbee2mqtt/Hive TRV Hallway/set
-    Entrance:
-      - zigbee2mqtt/Hive TRV Entrance/set
-    Guest Room:
-      - zigbee2mqtt/Hive TRV Guestroom/set
-    Conservatory:
-      - zigbee2mqtt/Hive TRV Conservatory/set
-    Garage:
-      - zigbee2mqtt/Hive TRV Garage/set
-    All Rooms:
-      - zigbee2mqtt/Hive TRV TV/set
-      - zigbee2mqtt/Hive TRV Bay/set
-      - zigbee2mqtt/Hive TRV Dining/set
-      - zigbee2mqtt/Hive TRV Bedroom/set
-      - zigbee2mqtt/Hive TRV Kitchen/set
-      - zigbee2mqtt/Hive TRV Office/set
-      - zigbee2mqtt/Hive TRV Hallway/set
-      - zigbee2mqtt/Hive TRV Entrance/set
-      - zigbee2mqtt/Hive TRV Guestroom/set
-      - zigbee2mqtt/Hive TRV Conservatory/set
-      - zigbee2mqtt/Hive TRV Garage/set
 action:
   - service: logbook.log
     data:
       name: Boiler control
       message: >
-        Boost started — {{ room }}, {{ temperature }}°C for {{ duration }} minutes
+        Boost started — Living Room,
+        {{ states('input_number.boost_living_room_temp') | float }}°C
+        for {{ states('input_number.boost_living_room_duration') | int }} minutes
       entity_id: switch.boiler_switch
-
-  # Send single MQTT payload to each TRV in the selected room
-  # All four fields must be in one message — firmware requirement
   - repeat:
-      for_each: "{{ room_trvs[room] }}"
+      for_each:
+        - zigbee2mqtt/Hive TRV TV/set
+        - zigbee2mqtt/Hive TRV Bay/set
+        - zigbee2mqtt/Hive TRV Dining/set
       sequence:
         - service: mqtt.publish
           data:
@@ -69,69 +29,390 @@ action:
             payload: >
               {"system_mode":"emergency_heating",
                "temperature_setpoint_hold":1,
-               "temperature_setpoint_hold_duration":{{ duration }},
-               "occupied_heating_setpoint":{{ temperature }}}
+               "temperature_setpoint_hold_duration":{{ states('input_number.boost_living_room_duration') | int }},
+               "occupied_heating_setpoint":{{ states('input_number.boost_living_room_temp') | float }}}
 
 ---
 
-alias: Heating — Cancel boost
-description: >
-  Cancels active boost on all TRVs in the selected room.
-  Returns them to heat mode following their schedule.
+alias: Heating — Cancel Boost Living Room
 mode: single
 trigger:
   - platform: state
-    entity_id: input_boolean.heating_boost_active
+    entity_id: input_boolean.boost_living_room
     to: "off"
-variables:
-  room: "{{ states('input_select.heating_boost_room') }}"
-  room_trvs:
-    Living Room:
-      - zigbee2mqtt/Hive TRV TV/set
-      - zigbee2mqtt/Hive TRV Bay/set
-      - zigbee2mqtt/Hive TRV Dining/set
-    Bedroom:
-      - zigbee2mqtt/Hive TRV Bedroom/set
-    Kitchen:
-      - zigbee2mqtt/Hive TRV Kitchen/set
-    Office:
-      - zigbee2mqtt/Hive TRV Office/set
-    Hallway:
-      - zigbee2mqtt/Hive TRV Hallway/set
-    Entrance:
-      - zigbee2mqtt/Hive TRV Entrance/set
-    Guest Room:
-      - zigbee2mqtt/Hive TRV Guestroom/set
-    Conservatory:
-      - zigbee2mqtt/Hive TRV Conservatory/set
-    Garage:
-      - zigbee2mqtt/Hive TRV Garage/set
-    All Rooms:
-      - zigbee2mqtt/Hive TRV TV/set
-      - zigbee2mqtt/Hive TRV Bay/set
-      - zigbee2mqtt/Hive TRV Dining/set
-      - zigbee2mqtt/Hive TRV Bedroom/set
-      - zigbee2mqtt/Hive TRV Kitchen/set
-      - zigbee2mqtt/Hive TRV Office/set
-      - zigbee2mqtt/Hive TRV Hallway/set
-      - zigbee2mqtt/Hive TRV Entrance/set
-      - zigbee2mqtt/Hive TRV Guestroom/set
-      - zigbee2mqtt/Hive TRV Conservatory/set
-      - zigbee2mqtt/Hive TRV Garage/set
 action:
   - repeat:
-      for_each: "{{ room_trvs[room] }}"
+      for_each:
+        - zigbee2mqtt/Hive TRV TV/set
+        - zigbee2mqtt/Hive TRV Bay/set
+        - zigbee2mqtt/Hive TRV Dining/set
       sequence:
         - service: mqtt.publish
           data:
             topic: "{{ repeat.item }}"
-            payload: >
-              {"system_mode":"heat",
-               "temperature_setpoint_hold":0,
-               "temperature_setpoint_hold_duration":0}
-
+            payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
   - service: logbook.log
     data:
       name: Boiler control
-      message: "Boost cancelled — {{ room }}"
+      message: Boost cancelled — Living Room
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Bedroom
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_bedroom
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Bedroom,
+        {{ states('input_number.boost_bedroom_temp') | float }}°C
+        for {{ states('input_number.boost_bedroom_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Bedroom/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_bedroom_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_bedroom_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Bedroom
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_bedroom
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Bedroom/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Bedroom
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Kitchen
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_kitchen
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Kitchen,
+        {{ states('input_number.boost_kitchen_temp') | float }}°C
+        for {{ states('input_number.boost_kitchen_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Kitchen/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_kitchen_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_kitchen_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Kitchen
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_kitchen
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Kitchen/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Kitchen
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Office
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_office
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Office,
+        {{ states('input_number.boost_office_temp') | float }}°C
+        for {{ states('input_number.boost_office_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Office/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_office_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_office_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Office
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_office
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Office/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Office
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Hallway
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_hallway
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Hallway,
+        {{ states('input_number.boost_hallway_temp') | float }}°C
+        for {{ states('input_number.boost_hallway_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Hallway/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_hallway_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_hallway_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Hallway
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_hallway
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Hallway/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Hallway
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Entrance
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_entrance
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Entrance,
+        {{ states('input_number.boost_entrance_temp') | float }}°C
+        for {{ states('input_number.boost_entrance_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Entrance/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_entrance_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_entrance_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Entrance
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_entrance
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Entrance/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Entrance
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Guest Room
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_guestroom
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Guest Room,
+        {{ states('input_number.boost_guestroom_temp') | float }}°C
+        for {{ states('input_number.boost_guestroom_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Guestroom/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_guestroom_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_guestroom_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Guest Room
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_guestroom
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Guestroom/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Guest Room
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Conservatory
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_conservatory
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Conservatory,
+        {{ states('input_number.boost_conservatory_temp') | float }}°C
+        for {{ states('input_number.boost_conservatory_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Conservatory/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_conservatory_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_conservatory_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Conservatory
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_conservatory
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Conservatory/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Conservatory
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Boost Garage
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_garage
+    to: "on"
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — Garage,
+        {{ states('input_number.boost_garage_temp') | float }}°C
+        for {{ states('input_number.boost_garage_duration') | int }} minutes
+      entity_id: switch.boiler_switch
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Garage/set
+      payload: >
+        {"system_mode":"emergency_heating",
+         "temperature_setpoint_hold":1,
+         "temperature_setpoint_hold_duration":{{ states('input_number.boost_garage_duration') | int }},
+         "occupied_heating_setpoint":{{ states('input_number.boost_garage_temp') | float }}}
+
+---
+
+alias: Heating — Cancel Boost Garage
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.boost_garage
+    to: "off"
+action:
+  - service: mqtt.publish
+    data:
+      topic: zigbee2mqtt/Hive TRV Garage/set
+      payload: '{"system_mode":"heat","temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}'
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: Boost cancelled — Garage
       entity_id: switch.boiler_switch

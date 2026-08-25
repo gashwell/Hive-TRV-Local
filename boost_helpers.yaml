@@ -1,30 +1,50 @@
-# Boost helpers — add to configuration.yaml or create via Settings → Helpers
+# Per-room boost helpers
+# Create each via Settings → Helpers
+# Toggle (input_boolean) + two Numbers (input_number) per room
 #
-# input_boolean: heating_boost_active
-#   Name: Heating boost active
-#   Icon: mdi:fire
-#
-# input_number: heating_boost_duration
-#   Name: Boost duration
-#   Min: 10, Max: 120, Step: 10, Unit: min
-#
-# input_number: heating_boost_temperature
-#   Name: Boost temperature  
-#   Min: 16, Max: 28, Step: 0.5, Unit: °C
-#
-# input_select: heating_boost_room
-#   Name: Boost room
-#   Options: Living Room, Bedroom, Kitchen, Office, Hallway,
-#             Entrance, Guest Room, Conservatory, Garage, All Rooms
+# Rooms: living_room, bedroom, kitchen, office, hallway,
+#         entrance, guestroom, conservatory, garage
 
 input_boolean:
-  heating_boost_active:
-    name: Heating boost active
+  boost_living_room:
+    name: Boost Living Room
+    icon: mdi:fire
+  boost_bedroom:
+    name: Boost Bedroom
+    icon: mdi:fire
+  boost_kitchen:
+    name: Boost Kitchen
+    icon: mdi:fire
+  boost_office:
+    name: Boost Office
+    icon: mdi:fire
+  boost_hallway:
+    name: Boost Hallway
+    icon: mdi:fire
+  boost_entrance:
+    name: Boost Entrance
+    icon: mdi:fire
+  boost_guestroom:
+    name: Boost Guest Room
+    icon: mdi:fire
+  boost_conservatory:
+    name: Boost Conservatory
+    icon: mdi:fire
+  boost_garage:
+    name: Boost Garage
     icon: mdi:fire
 
 input_number:
-  heating_boost_duration:
-    name: Boost duration
+  boost_living_room_temp:
+    name: Boost Living Room temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_living_room_duration:
+    name: Boost Living Room duration
     min: 10
     max: 120
     step: 10
@@ -32,28 +52,138 @@ input_number:
     icon: mdi:timer
     initial: 60
 
-  heating_boost_temperature:
-    name: Boost temperature
+  boost_bedroom_temp:
+    name: Boost Bedroom temp
     min: 16
     max: 28
     step: 0.5
     unit_of_measurement: °C
     icon: mdi:thermometer
     initial: 22
+  boost_bedroom_duration:
+    name: Boost Bedroom duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
 
-input_select:
-  heating_boost_room:
-    name: Boost room
-    options:
-      - Living Room
-      - Bedroom
-      - Kitchen
-      - Office
-      - Hallway
-      - Entrance
-      - Guest Room
-      - Conservatory
-      - Garage
-      - All Rooms
-    initial: Living Room
-    icon: mdi:home-thermometer
+  boost_kitchen_temp:
+    name: Boost Kitchen temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_kitchen_duration:
+    name: Boost Kitchen duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  boost_office_temp:
+    name: Boost Office temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_office_duration:
+    name: Boost Office duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  boost_hallway_temp:
+    name: Boost Hallway temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_hallway_duration:
+    name: Boost Hallway duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  boost_entrance_temp:
+    name: Boost Entrance temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_entrance_duration:
+    name: Boost Entrance duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  boost_guestroom_temp:
+    name: Boost Guest Room temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_guestroom_duration:
+    name: Boost Guest Room duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  boost_conservatory_temp:
+    name: Boost Conservatory temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_conservatory_duration:
+    name: Boost Conservatory duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  boost_garage_temp:
+    name: Boost Garage temp
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+  boost_garage_duration:
+    name: Boost Garage duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60

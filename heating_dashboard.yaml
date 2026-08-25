@@ -146,197 +146,461 @@ views:
                     tap_action:
                       action: more-info
                       entity: climate.hive_trv_dining
-
-      # Boost panel
-      - type: grid
-        columns: 1
-        cards:
-          - type: vertical-stack
-            cards:
-              - type: custom:mushroom-template-card
-                primary: >
-                  {{ 'Boost active — ' + states('input_select.heating_boost_room')
-                     if is_state('input_boolean.heating_boost_active', 'on')
-                     else 'Boost' }}
-                secondary: >
-                  {% if is_state('input_boolean.heating_boost_active', 'on') %}
-                    {{ states('input_number.heating_boost_temperature') | float | round(1) }}°C
-                  {% else %}
-                    Select room, temperature and duration
-                  {% endif %}
-                icon: mdi:fire
-                icon_color: >
-                  {{ 'orange' if is_state('input_boolean.heating_boost_active', 'on') else 'grey' }}
-                badge_icon: >
-                  {{ 'mdi:check-circle' if is_state('input_boolean.heating_boost_active', 'on') else '' }}
-                badge_color: orange
               - type: entities
                 entities:
-                  - entity: input_select.heating_boost_room
-                    name: Room
-                  - entity: input_number.heating_boost_temperature
-                    name: Boost temperature
-                  - entity: input_number.heating_boost_duration
-                    name: Duration (minutes)
+                  - entity: input_number.boost_living_room_temp
+                    name: Boost temp
+                  - entity: input_number.boost_living_room_duration
+                    name: Duration (min)
               - type: horizontal-stack
                 cards:
                   - type: custom:mushroom-template-card
-                    primary: Start boost
+                    primary: "{{ 'Boosting' if is_state('input_boolean.boost_living_room', 'on') else 'Boost' }}"
                     icon: mdi:fire
-                    icon_color: orange
+                    icon_color: "{{ 'orange' if is_state('input_boolean.boost_living_room', 'on') else 'grey' }}"
                     tap_action:
                       action: call-service
                       service: input_boolean.turn_on
                       service_data:
-                        entity_id: input_boolean.heating_boost_active
+                        entity_id: input_boolean.boost_living_room
                     card_mod:
                       style: |
                         :host {
-                          --ha-card-background: rgba(232, 99, 42, 0.1);
-                          border: 0.5px solid rgba(232, 99, 42, 0.5);
+                          {% if is_state('input_boolean.boost_living_room', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
                         }
                   - type: custom:mushroom-template-card
-                    primary: Cancel boost
+                    primary: Cancel
                     icon: mdi:fire-off
                     icon_color: grey
                     tap_action:
                       action: call-service
                       service: input_boolean.turn_off
                       service_data:
-                        entity_id: input_boolean.heating_boost_active
+                        entity_id: input_boolean.boost_living_room
 
       # Individual rooms — flame badge shows when heating
       - type: grid
         columns: 2
         cards:
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_bedroom
-            name: Bedroom
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_bedroom', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_kitchen
-            name: Kitchen
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_kitchen', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_office
-            name: Office
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_office', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_hallway
-            name: Hallway
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_hallway', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_entrance
-            name: Entrance
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_entrance', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_guestroom
-            name: Guest Room
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_guestroom', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_conservatory
-            name: Conservatory
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_conservatory', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
-          - type: custom:mushroom-climate-card
-            entity: climate.hive_trv_garage
-            name: Garage
-            show_temperature_control: true
-            hvac_modes:
-              - heat
-              - "off"
-            tap_action:
-              action: more-info
-            card_mod:
-              style: |
-                mushroom-badge-icon$:
-                  ha-icon {
-                    display: {{ is_state_attr('climate.hive_trv_garage', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
-                    --icon-color: rgb(220, 38, 38);
-                  }
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_bedroom
+                name: Bedroom
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_bedroom', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_bedroom_temp
+                    name: Boost temp
+                  - entity: input_number.boost_bedroom_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_bedroom', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_bedroom', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_bedroom
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_bedroom', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_bedroom
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_kitchen
+                name: Kitchen
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_kitchen', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_kitchen_temp
+                    name: Boost temp
+                  - entity: input_number.boost_kitchen_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_kitchen', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_kitchen', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_kitchen
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_kitchen', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_kitchen
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_office
+                name: Office
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_office', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_office_temp
+                    name: Boost temp
+                  - entity: input_number.boost_office_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_office', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_office', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_office
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_office', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_office
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_hallway
+                name: Hallway
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_hallway', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_hallway_temp
+                    name: Boost temp
+                  - entity: input_number.boost_hallway_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_hallway', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_hallway', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_hallway
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_hallway', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_hallway
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_entrance
+                name: Entrance
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_entrance', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_entrance_temp
+                    name: Boost temp
+                  - entity: input_number.boost_entrance_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_entrance', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_entrance', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_entrance
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_entrance', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_entrance
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_guestroom
+                name: Guest Room
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_guestroom', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_guestroom_temp
+                    name: Boost temp
+                  - entity: input_number.boost_guestroom_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_guestroom', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_guestroom', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_guestroom
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_guestroom', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_guestroom
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_conservatory
+                name: Conservatory
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_conservatory', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_conservatory_temp
+                    name: Boost temp
+                  - entity: input_number.boost_conservatory_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_conservatory', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_conservatory', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_conservatory
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_conservatory', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_conservatory
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-climate-card
+                entity: climate.hive_trv_garage
+                name: Garage
+                show_temperature_control: true
+                hvac_modes:
+                  - heat
+                  - "off"
+                tap_action:
+                  action: more-info
+                card_mod:
+                  style: |
+                    mushroom-badge-icon$:
+                      ha-icon {
+                        display: {{ is_state_attr('climate.hive_trv_garage', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                        --icon-color: rgb(220, 38, 38);
+                      }
+              - type: entities
+                entities:
+                  - entity: input_number.boost_garage_temp
+                    name: Boost temp
+                  - entity: input_number.boost_garage_duration
+                    name: Duration (min)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: "{ 'Boosting' if is_state('input_boolean.boost_garage', 'on') else 'Boost' }"
+                    icon: mdi:fire
+                    icon_color: "{ 'orange' if is_state('input_boolean.boost_garage', 'on') else 'grey' }"
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.boost_garage
+                    card_mod:
+                      style: |
+                        :host {
+                          {% if is_state('input_boolean.boost_garage', 'on') %}
+                          --ha-card-background: rgba(232, 99, 42, 0.15);
+                          border: 0.5px solid rgba(232, 99, 42, 0.6);
+                          {% endif %}
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.boost_garage
 
 
   # ────────────────────────────────────────────────────────────────────────────
