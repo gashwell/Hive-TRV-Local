@@ -1,6 +1,22 @@
 alias: Heating — Eco mode
-description: All TRVs set to eco (lower setpoints, reduced demand).
+description: All TRVs set to heat mode then programme mode set to eco.
 sequence:
+  - service: climate.set_hvac_mode
+    target:
+      entity_id:
+        - climate.hive_trv_tv
+        - climate.hive_trv_bay
+        - climate.hive_trv_dining
+        - climate.hive_trv_bedroom
+        - climate.hive_trv_kitchen
+        - climate.hive_trv_office
+        - climate.hive_trv_hallway
+        - climate.hive_trv_entrance
+        - climate.hive_trv_guestroom
+        - climate.hive_trv_conservatory
+        - climate.hive_trv_garage
+    data:
+      hvac_mode: heat
   - service: select.select_option
     target:
       entity_id:
