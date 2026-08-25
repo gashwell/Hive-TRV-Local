@@ -76,7 +76,7 @@ condition:
 
 action:
   - delay:
-      minutes: 5
+      minutes: 3
 
   # Re-check after hold-off — abort if any TRV started heating again
   - condition: template
