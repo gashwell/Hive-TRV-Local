@@ -21,7 +21,6 @@ from homeassistant.helpers.typing import ConfigType
 
 from .common import HiveConfigEntry, HiveData
 from .const import (
-    CONF_MODEL,
     CONF_MQTT_TOPIC,
     CONF_SHOW_HEAT_SCHEDULE_MODE,
     CONF_SHOW_WATER_SCHEDULE_MODE,
@@ -74,13 +73,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: HiveConfigEntry) -> bool
     coordinator = HiveCoordinator(
         hass,
         entry.entry_id,
-        entry.options[CONF_MODEL],
+        const.MODEL_ZBMINIR2,
         entry.options[CONF_MQTT_TOPIC],
         entry.options.get(CONF_SHOW_HEAT_SCHEDULE_MODE, True),
         entry.options.get(CONF_SHOW_WATER_SCHEDULE_MODE, True),
     )
 
-    platforms = get_platforms(coordinator.model)
+    platforms = get_platforms(const.MODEL_ZBMINIR2)
 
     entry.runtime_data = HiveData(
         platforms=platforms,

@@ -12,7 +12,6 @@ CONFIG_VERSION = 1
 CONF_MQTT_TOPIC         = "mqtt_topic"
 CONF_BOILER_SWITCH      = "boiler_switch"
 CONF_Z2M_SWITCH_TOPIC  = "z2m_switch_topic"
-CONF_MODEL = "model"
 CONF_SHOW_HEAT_SCHEDULE_MODE = "show_heat_schedule_mode"
 
 MODEL_ZBMINIR2 = "ZBMINIR2"
