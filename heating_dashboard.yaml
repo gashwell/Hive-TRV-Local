@@ -10,7 +10,7 @@ views:
     type: sections
     sections:
 
-      # Boiler status
+      # Global mode controls + boiler
       - type: grid
         columns: 1
         cards:
@@ -21,6 +21,53 @@ views:
             color: deep-orange
             tap_action:
               action: toggle
+
+      - type: grid
+        columns: 4
+        cards:
+          - type: tile
+            name: Manual
+            icon: mdi:hand-back-right
+            entity: script.heating_manual_mode
+            tap_action:
+              action: call-service
+              service: script.turn_on
+              service_data:
+                entity_id: script.heating_manual_mode
+            color: blue
+
+          - type: tile
+            name: Schedule
+            icon: mdi:calendar-clock
+            entity: script.heating_schedule_mode
+            tap_action:
+              action: call-service
+              service: script.turn_on
+              service_data:
+                entity_id: script.heating_schedule_mode
+            color: green
+
+          - type: tile
+            name: Eco
+            icon: mdi:leaf
+            entity: script.heating_eco_mode
+            tap_action:
+              action: call-service
+              service: script.turn_on
+              service_data:
+                entity_id: script.heating_eco_mode
+            color: teal
+
+          - type: tile
+            name: Off
+            icon: mdi:radiator-off
+            entity: script.heating_off
+            tap_action:
+              action: call-service
+              service: script.turn_on
+              service_data:
+                entity_id: script.heating_off
+            color: red
 
       # Living room group — thermostat card controls all 3 TRVs together
       - type: grid
