@@ -35,106 +35,171 @@ views:
                   - heat
                   - "off"
 
-      # Living room — individual TRV status (read-only demand view)
+      # Living room — individual TRVs with flame badge when heating
       - type: grid
         columns: 3
         cards:
-          - type: tile
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_tv
             name: TV
-            icon: mdi:radiator
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: tile
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_tv', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_bay
             name: Bay
-            icon: mdi:radiator
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: tile
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_bay', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_dining
             name: Dining
-            icon: mdi:radiator
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_dining', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
 
-      # Individual rooms
+
+      # Individual rooms — flame badge shows when heating
       - type: grid
         columns: 2
         cards:
-          - type: thermostat
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_bedroom
             name: Bedroom
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_bedroom', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_kitchen
             name: Kitchen
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_kitchen', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_office
             name: Office
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_office', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_hallway
             name: Hallway
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_hallway', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_entrance
             name: Entrance
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_entrance', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_guestroom
             name: Guest Room
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_guestroom', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_conservatory
             name: Conservatory
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-          - type: thermostat
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_conservatory', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+          - type: custom:mushroom-climate-card
             entity: climate.hive_trv_garage
             name: Garage
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
+            show_temperature_control: true
+            hvac_modes:
+              - heat
+              - "off"
+            card_mod:
+              style: |
+                mushroom-badge-icon$:
+                  ha-icon {
+                    display: {{ is_state_attr('climate.hive_trv_garage', 'hvac_action', 'heating') | iif('inline-flex', 'none') }};
+                    --icon-color: rgb(220, 38, 38);
+                  }
+
 
   # ────────────────────────────────────────────────────────────────────────────
   # VIEW 2 — TRV SETTINGS
