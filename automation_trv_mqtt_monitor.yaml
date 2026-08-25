@@ -1,0 +1,41 @@
+alias: TRV MQTT raw monitor
+description: >
+  Monitors raw MQTT topics for all 11 TRVs and logs every message.
+  Useful for diagnosing unexpected heat_required or state changes.
+mode: parallel
+max: 50
+trigger:
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV TV
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Bay
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Dining
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Bedroom
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Kitchen
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Office
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Hallway
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Entrance
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Guestroom
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Conservatory
+  - platform: mqtt
+    topic: zigbee2mqtt/Hive TRV Garage
+action:
+  - service: logbook.log
+    data:
+      name: TRV MQTT
+      message: >
+        [{{ trigger.topic.split('/')[-1] }}]
+        heat_required={{ trigger.payload_json.heat_required | default('n/a') }}
+        running_state={{ trigger.payload_json.running_state | default('n/a') }}
+        pi_demand={{ trigger.payload_json.pi_heating_demand | default('n/a') }}
+        local_temp={{ trigger.payload_json.local_temperature | default('n/a') }}
+        at {{ now().strftime('%H:%M:%S') }}
+      entity_id: switch.boiler_switch
