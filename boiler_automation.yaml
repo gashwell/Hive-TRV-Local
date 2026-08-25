@@ -1,19 +1,17 @@
-# Boiler demand automation
-# Add to automations.yaml or import via Settings → Automations → Import
-#
-# Turns switch.boiler_switch ON when any TRV is actively heating
-# Turns it OFF when all TRVs are idle (with a 5-minute hold-off)
-
 alias: Boiler demand control
 description: >
-  Fires the ZBMINIR2 relay when any TRV calls for heat.
-  5-minute delay before turning off to prevent boiler short-cycling.
+  Fires the ZBMINIR2 relay when any individual TRV valve is actively heating.
+  Watches all 11 TRVs directly — the living room group sets the schedule and
+  target temp but each TRV independently demands heat based on its local reading.
+  5-minute hold-off before turning off to prevent boiler short-cycling.
 mode: restart
 
 trigger:
   - platform: state
     entity_id:
-      - climate.hive_trv_group_living_room
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
       - climate.hive_trv_kitchen
       - climate.hive_trv_bedroom
       - climate.hive_trv_office
@@ -25,17 +23,31 @@ trigger:
     attribute: hvac_action
 
 variables:
+  all_trvs:
+    - climate.hive_trv_tv
+    - climate.hive_trv_bay
+    - climate.hive_trv_dining
+    - climate.hive_trv_kitchen
+    - climate.hive_trv_bedroom
+    - climate.hive_trv_office
+    - climate.hive_trv_guestroom
+    - climate.hive_trv_garage
+    - climate.hive_trv_conservatory
+    - climate.hive_trv_entrance
+    - climate.hive_trv_hallway
   any_heating: >
     {{ states | selectattr('entity_id', 'in', [
-      'climate.hive_trv_group_living_room',
-      'climate.hive_trv_kitchen',
-      'climate.hive_trv_bedroom',
-      'climate.hive_trv_office',
-      'climate.hive_trv_guestroom',
-      'climate.hive_trv_garage',
-      'climate.hive_trv_conservatory',
-      'climate.hive_trv_entrance',
-      'climate.hive_trv_hallway'
+        'climate.hive_trv_tv',
+        'climate.hive_trv_bay',
+        'climate.hive_trv_dining',
+        'climate.hive_trv_kitchen',
+        'climate.hive_trv_bedroom',
+        'climate.hive_trv_office',
+        'climate.hive_trv_guestroom',
+        'climate.hive_trv_garage',
+        'climate.hive_trv_conservatory',
+        'climate.hive_trv_entrance',
+        'climate.hive_trv_hallway'
     ]) | selectattr('attributes.hvac_action', 'eq', 'heating')
     | list | count > 0 }}
 
@@ -48,24 +60,28 @@ action:
           - service: switch.turn_on
             target:
               entity_id: switch.boiler_switch
+
       - conditions:
           - condition: template
             value_template: "{{ not any_heating }}"
         sequence:
           - delay:
               minutes: 5
+          # Re-check after hold-off — if demand returned during the 5 min, abort
           - condition: template
             value_template: >
               {{ states | selectattr('entity_id', 'in', [
-                'climate.hive_trv_group_living_room',
-                'climate.hive_trv_kitchen',
-                'climate.hive_trv_bedroom',
-                'climate.hive_trv_office',
-                'climate.hive_trv_guestroom',
-                'climate.hive_trv_garage',
-                'climate.hive_trv_conservatory',
-                'climate.hive_trv_entrance',
-                'climate.hive_trv_hallway'
+                  'climate.hive_trv_tv',
+                  'climate.hive_trv_bay',
+                  'climate.hive_trv_dining',
+                  'climate.hive_trv_kitchen',
+                  'climate.hive_trv_bedroom',
+                  'climate.hive_trv_office',
+                  'climate.hive_trv_guestroom',
+                  'climate.hive_trv_garage',
+                  'climate.hive_trv_conservatory',
+                  'climate.hive_trv_entrance',
+                  'climate.hive_trv_hallway'
               ]) | selectattr('attributes.hvac_action', 'eq', 'heating')
               | list | count == 0 }}
           - service: switch.turn_off
