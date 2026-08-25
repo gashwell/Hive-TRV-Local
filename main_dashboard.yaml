@@ -36,9 +36,6 @@ views:
     sections:
       - type: grid
         cards:
-          - type: heading
-            heading: New section
-        cards:
           - type: custom:button-card
             name: Heating
             icon: mdi:fire
