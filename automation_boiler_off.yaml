@@ -1,0 +1,97 @@
+alias: Boiler OFF — all TRVs satisfied
+description: >
+  Turns the boiler off 3 minutes after all TRV demand clears.
+  Triggers on hvac_action, heat_required, and a 2-minute watchdog.
+  Re-checks before turning off — aborts if demand returned.
+mode: restart
+trigger:
+  - platform: state
+    entity_id:
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
+      - climate.hive_trv_kitchen
+      - climate.hive_trv_bedroom
+      - climate.hive_trv_office
+      - climate.hive_trv_guestroom
+      - climate.hive_trv_garage
+      - climate.hive_trv_conservatory
+      - climate.hive_trv_entrance
+      - climate.hive_trv_hallway
+    attribute: hvac_action
+    from: heating
+  - platform: state
+    entity_id:
+      - binary_sensor.hive_trv_tv_heat_required
+      - binary_sensor.hive_trv_bay_heat_required
+      - binary_sensor.hive_trv_dining_heat_required
+      - binary_sensor.hive_trv_kitchen_heat_required
+      - binary_sensor.hive_trv_bedroom_heat_required
+      - binary_sensor.hive_trv_office_heat_required
+      - binary_sensor.hive_trv_guestroom_heat_required
+      - binary_sensor.hive_trv_garage_heat_required
+      - binary_sensor.hive_trv_conservatory_heat_required
+      - binary_sensor.hive_trv_entrance_heat_required
+      - binary_sensor.hive_trv_hallway_heat_required
+    to: "off"
+  - platform: time_pattern
+    minutes: "/2"
+condition:
+  - condition: state
+    entity_id: switch.boiler_switch
+    state: "on"
+  - condition: template
+    value_template: >
+      {{ states | selectattr('entity_id', 'in', [
+          'climate.hive_trv_tv', 'climate.hive_trv_bay', 'climate.hive_trv_dining',
+          'climate.hive_trv_kitchen', 'climate.hive_trv_bedroom', 'climate.hive_trv_office',
+          'climate.hive_trv_guestroom', 'climate.hive_trv_garage', 'climate.hive_trv_conservatory',
+          'climate.hive_trv_entrance', 'climate.hive_trv_hallway'
+      ]) | selectattr('attributes.hvac_action', 'eq', 'heating') | list | count == 0 }}
+  - condition: template
+    value_template: >
+      {{ states | selectattr('entity_id', 'in', [
+          'binary_sensor.hive_trv_tv_heat_required',
+          'binary_sensor.hive_trv_bay_heat_required',
+          'binary_sensor.hive_trv_dining_heat_required',
+          'binary_sensor.hive_trv_kitchen_heat_required',
+          'binary_sensor.hive_trv_bedroom_heat_required',
+          'binary_sensor.hive_trv_office_heat_required',
+          'binary_sensor.hive_trv_guestroom_heat_required',
+          'binary_sensor.hive_trv_garage_heat_required',
+          'binary_sensor.hive_trv_conservatory_heat_required',
+          'binary_sensor.hive_trv_entrance_heat_required',
+          'binary_sensor.hive_trv_hallway_heat_required'
+      ]) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+action:
+  - delay:
+      minutes: 3
+  - condition: state
+    entity_id: switch.boiler_switch
+    state: "on"
+  - condition: template
+    value_template: >
+      {{ states | selectattr('entity_id', 'in', [
+          'climate.hive_trv_tv', 'climate.hive_trv_bay', 'climate.hive_trv_dining',
+          'climate.hive_trv_kitchen', 'climate.hive_trv_bedroom', 'climate.hive_trv_office',
+          'climate.hive_trv_guestroom', 'climate.hive_trv_garage', 'climate.hive_trv_conservatory',
+          'climate.hive_trv_entrance', 'climate.hive_trv_hallway'
+      ]) | selectattr('attributes.hvac_action', 'eq', 'heating') | list | count == 0 }}
+  - condition: template
+    value_template: >
+      {{ states | selectattr('entity_id', 'in', [
+          'binary_sensor.hive_trv_tv_heat_required',
+          'binary_sensor.hive_trv_bay_heat_required',
+          'binary_sensor.hive_trv_dining_heat_required',
+          'binary_sensor.hive_trv_kitchen_heat_required',
+          'binary_sensor.hive_trv_bedroom_heat_required',
+          'binary_sensor.hive_trv_office_heat_required',
+          'binary_sensor.hive_trv_guestroom_heat_required',
+          'binary_sensor.hive_trv_garage_heat_required',
+          'binary_sensor.hive_trv_conservatory_heat_required',
+          'binary_sensor.hive_trv_entrance_heat_required',
+          'binary_sensor.hive_trv_hallway_heat_required'
+      ]) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+  - service: switch.turn_off
+    target:
+      entity_id: switch.boiler_switch
