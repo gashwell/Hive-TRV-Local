@@ -38,7 +38,227 @@ views:
         cards:
           - type: heading
             heading: New section
-        cards: []
+        cards:
+          - type: custom:button-card
+            name: Heating
+            icon: mdi:fire
+            show_state: false
+            show_name: true
+            show_icon: true
+            show_label: true
+            label: |
+              [[[
+                var mode = states['input_select.heating_mode'] ? states['input_select.heating_mode'].state : 'Unknown';
+                var boiler = states['switch.boiler_switch'] ? states['switch.boiler_switch'].state : 'off';
+                return mode + ' · Boiler ' + (boiler === 'on' ? '🔥 On' : 'Off');
+              ]]]
+            styles:
+              card:
+                - border-radius: 12px
+                - padding: 12px 14px
+                - background-color: |
+                    [[[
+                      var boiler = states['switch.boiler_switch'] ? states['switch.boiler_switch'].state : 'off';
+                      return boiler === 'on'
+                        ? 'rgba(232, 99, 42, 0.15)'
+                        : 'rgba(var(--primary-text-color), 0.05)';
+                    ]]]
+                - border: |
+                    [[[
+                      var boiler = states['switch.boiler_switch'] ? states['switch.boiler_switch'].state : 'off';
+                      return boiler === 'on'
+                        ? '1px solid rgba(232, 99, 42, 0.8)'
+                        : '1px solid rgba(var(--primary-text-color), 0.2)';
+                    ]]]
+              icon:
+                - color: |
+                    [[[
+                      var boiler = states['switch.boiler_switch'] ? states['switch.boiler_switch'].state : 'off';
+                      return boiler === 'on' ? 'rgb(232, 99, 42)' : 'var(--primary-text-color)';
+                    ]]]
+                - animation: |
+                    [[[
+                      var boiler = states['switch.boiler_switch'] ? states['switch.boiler_switch'].state : 'off';
+                      return boiler === 'on' ? 'pulsing 1.5s ease-in-out infinite' : 'none';
+                    ]]]
+              name:
+                - font-size: 14px
+                - font-weight: 500
+              label:
+                - font-size: 11px
+                - opacity: '0.8'
+            tap_action:
+              action: fire-dom-event
+              browser_mod:
+                service: browser_mod.popup
+                data:
+                  title: Heating
+                  right_button: Open dashboard
+                  right_button_action:
+                    action: navigate
+                    navigation_path: /heating
+                  content:
+                    type: vertical-stack
+                    cards:
+                      - type: tile
+                        entity: switch.boiler_switch
+                        name: Boiler
+                        icon: mdi:fire
+                        color: deep-orange
+                        tap_action:
+                          action: toggle
+                      - type: horizontal-stack
+                        cards:
+                          - type: custom:button-card
+                            name: Manual
+                            icon: mdi:hand-back-right
+                            styles:
+                              card:
+                                - border-radius: 8px
+                                - background-color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Manual'
+                                        ? 'rgba(var(--color-blue), 0.2)'
+                                        : 'rgba(var(--primary-text-color), 0.05)';
+                                    ]]]
+                                - border: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Manual'
+                                        ? '1px solid rgba(var(--color-blue), 0.8)'
+                                        : '1px solid rgba(var(--primary-text-color), 0.1)';
+                                    ]]]
+                              icon:
+                                - color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Manual'
+                                        ? 'rgb(var(--color-blue))' : 'var(--primary-text-color)';
+                                    ]]]
+                              name:
+                                - font-size: 12px
+                            tap_action:
+                              action: call-service
+                              service: script.turn_on
+                              service_data:
+                                entity_id: script.heating_manual_mode
+                          - type: custom:button-card
+                            name: Schedule
+                            icon: mdi:calendar-clock
+                            styles:
+                              card:
+                                - border-radius: 8px
+                                - background-color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Schedule'
+                                        ? 'rgba(var(--color-green), 0.2)'
+                                        : 'rgba(var(--primary-text-color), 0.05)';
+                                    ]]]
+                                - border: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Schedule'
+                                        ? '1px solid rgba(var(--color-green), 0.8)'
+                                        : '1px solid rgba(var(--primary-text-color), 0.1)';
+                                    ]]]
+                              icon:
+                                - color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Schedule'
+                                        ? 'rgb(var(--color-green))' : 'var(--primary-text-color)';
+                                    ]]]
+                              name:
+                                - font-size: 12px
+                            tap_action:
+                              action: call-service
+                              service: script.turn_on
+                              service_data:
+                                entity_id: script.heating_schedule_mode
+                          - type: custom:button-card
+                            name: Eco
+                            icon: mdi:leaf
+                            styles:
+                              card:
+                                - border-radius: 8px
+                                - background-color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Eco'
+                                        ? 'rgba(var(--color-teal), 0.2)'
+                                        : 'rgba(var(--primary-text-color), 0.05)';
+                                    ]]]
+                                - border: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Eco'
+                                        ? '1px solid rgba(var(--color-teal), 0.8)'
+                                        : '1px solid rgba(var(--primary-text-color), 0.1)';
+                                    ]]]
+                              icon:
+                                - color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Eco'
+                                        ? 'rgb(var(--color-teal))' : 'var(--primary-text-color)';
+                                    ]]]
+                              name:
+                                - font-size: 12px
+                            tap_action:
+                              action: call-service
+                              service: script.turn_on
+                              service_data:
+                                entity_id: script.heating_eco_mode
+                          - type: custom:button-card
+                            name: Off
+                            icon: mdi:radiator-off
+                            styles:
+                              card:
+                                - border-radius: 8px
+                                - background-color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Off'
+                                        ? 'rgba(var(--color-red), 0.2)'
+                                        : 'rgba(var(--primary-text-color), 0.05)';
+                                    ]]]
+                                - border: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Off'
+                                        ? '1px solid rgba(var(--color-red), 0.8)'
+                                        : '1px solid rgba(var(--primary-text-color), 0.1)';
+                                    ]]]
+                              icon:
+                                - color: |
+                                    [[[
+                                      return states['input_select.heating_mode'].state === 'Off'
+                                        ? 'rgb(var(--color-red))' : 'var(--primary-text-color)';
+                                    ]]]
+                              name:
+                                - font-size: 12px
+                            tap_action:
+                              action: call-service
+                              service: script.turn_on
+                              service_data:
+                                entity_id: script.heating_off
+                      - type: custom:mushroom-template-card
+                        primary: >
+                          {% set ns = namespace(calling=[]) %}
+                          {% for e, n in [
+                            ('climate.hive_trv_tv','TV'),('climate.hive_trv_bay','Bay'),
+                            ('climate.hive_trv_dining','Dining'),('climate.hive_trv_bedroom','Bedroom'),
+                            ('climate.hive_trv_kitchen','Kitchen'),('climate.hive_trv_office','Office'),
+                            ('climate.hive_trv_hallway','Hallway'),('climate.hive_trv_entrance','Entrance'),
+                            ('climate.hive_trv_guestroom','Guest Room'),
+                            ('climate.hive_trv_conservatory','Conservatory'),
+                            ('climate.hive_trv_garage','Garage')
+                          ] %}
+                            {% if is_state_attr(e, 'hvac_action', 'heating') %}
+                              {% set ns.calling = ns.calling + [n] %}
+                            {% endif %}
+                          {% endfor %}
+                          {% if ns.calling %}
+                            🔥 {{ ns.calling | join(', ') }}
+                          {% else %}
+                            No TRVs demanding heat
+                          {% endif %}
+                        icon: mdi:radiator
+                        icon_color: "{{ 'red' if ns.calling else 'grey' }}"
+                        tap_action:
+                          action: navigate
+                          navigation_path: /heating
 
   # ── Bathroom ──────────────────────────────────────────────────────────────
   - type: sections
