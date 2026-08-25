@@ -781,6 +781,18 @@ views:
     type: sections
     sections:
 
+      # Boiler state
+      - type: grid
+        columns: 1
+        cards:
+          - type: tile
+            entity: switch.boiler_switch
+            name: Boiler
+            icon: mdi:fire
+            color: deep-orange
+            tap_action:
+              action: toggle
+
       # Heating demand log — shows which TRV triggered with temp and demand %
       - type: grid
         columns: 1
