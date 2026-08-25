@@ -1,708 +1,448 @@
-"""Central coordinator for Hive Local v5.
+"""Coordinator for Hive Local — ZBMINIR2 boiler switch control."""
 
-Single instance per config entry. Manages:
-- All registered devices (TRVs and receivers) and their MQTT connections
-- All rooms and their member relationships
-- Boiler demand — drives the receiver when any room calls for heat
-- Entity registry — hides/restores TRV climate entities based on room membership
-"""
 from __future__ import annotations
 
-import logging
+import json
+from asyncio import sleep
+from datetime import datetime, timedelta
 from typing import Any
 
-from homeassistant.components.climate.const import HVACAction
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.components.climate.const import HVACAction, HVACMode, PRESET_BOOST, PRESET_NONE
+from homeassistant.components.mqtt import client as mqtt_client
+from homeassistant.components.mqtt.models import ReceiveMessage
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.entity_registry import RegistryEntryHider
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util.dt import utcnow
 
 from .const import (
-    BOILER_MIN_OFF_DELAY, CONF_BOILER_ENTITY,
-    DEVICE_TYPE_BOILER_SWITCH, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV,
-    DOMAIN, EVENT_ROOM_ADDED, EVENT_ROOM_REMOVED, EVENT_ROOM_UPDATED,
-    TRV_DEMAND_THRESHOLD, uid_device,
+    DEFAULT_FROST_TEMPERATURE,
+    DEFAULT_HEATING_BOOST_MINUTES,
+    DEFAULT_HEATING_BOOST_TEMPERATURE,
+    DOMAIN,
+    HIVE_BOOST,
+    LOGGER,
 )
-from .mqtt import HiveDeviceMqtt
-from .room import HiveRoom
-from .store import HiveLocalStore
 
-_LOGGER = logging.getLogger(__name__)
+PRESET_MAP = {
+    PRESET_NONE: "",
+    PRESET_BOOST: HIVE_BOOST,
+}
+
+BOOST_ERROR = 65000
+WATCHDOG_INTERVAL = 20   # seconds
+STARTUP_SETTLE   = 30    # seconds
 
 
-class HiveLocalCoordinator:
-    """Single coordinator managing all devices and rooms."""
+class HiveCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Manages a single Hive TRV (UK7004240) via MQTT.
+
+    The SLR receiver has been replaced by a Sonoff ZBMINIR2 relay.
+    This coordinator:
+    - Tracks TRV state (temp, target, mode, boost, running_state)
+    - Reports heat demand (heat_required / pi_heating_demand / running_state)
+    - The boiler switch (ZBMINIR2) is driven by a separate BoilerSwitchCoordinator
+    """
+
+    # TRV state
+    current_temperature: float | None = None
+    target_temperature:  float | None = None
+    preset_mode:         str | None   = None
+    hvac_mode:           HVACMode | None = None
+    running_state_heat:  str = ""
+
+    heat_boost:                  bool          = False
+    heat_boost_started:          datetime | None = None
+    heat_boost_started_duration: int           = 0
+    heat_boost_remaining:        int           = 0
+
+    pre_boost_hvac_mode:                         HVACMode | None = None
+    pre_boost_occupied_heating_setpoint_heat:    float | None    = None
+
+    # Number entity values
+    heating_boost_duration:     float = DEFAULT_HEATING_BOOST_MINUTES
+    heating_boost_temperature:  float = DEFAULT_HEATING_BOOST_TEMPERATURE
+    heating_frost_prevention:   float = DEFAULT_FROST_TEMPERATURE
+
+    # Diagnostics
+    last_mqtt_payload: dict[str, Any] | None = None
+
+    # Heat demand — used by BoilerSwitchCoordinator
+    heat_required:     bool | None = None
+    pi_heating_demand: int | None  = None
+    # Callback fired after every MQTT update
+    on_demand_change:  Any | None  = None
 
     def __init__(
         self,
         hass: HomeAssistant,
         entry_id: str,
-        store: HiveLocalStore,
-        boiler_entity: str | None,
+        model: str,
+        topic: str,
+        show_heat_schedule_mode: bool,
+        show_water_schedule_mode: bool,
     ) -> None:
-        self.hass          = hass
-        self.entry_id      = entry_id
-        self.store         = store
-        self.boiler_entity = boiler_entity
+        """Initialise the TRV coordinator."""
+        super().__init__(hass, LOGGER, name=f"{DOMAIN}_{entry_id}")
+        self.entry_id                 = entry_id
+        self.model                    = model
+        self.topic                    = topic
+        self.show_heating_schedule_mode = show_heat_schedule_mode
+        self.data: dict[str, Any]     = {}
 
-        self._devices: dict[str, HiveDeviceMqtt] = {}   # device_id → mqtt handler
-        self._rooms:   dict[str, HiveRoom]        = {}   # room_id   → room
+    @property
+    def topic_get(self) -> str:
+        return self.topic + "/get"
 
-        self._boiler_demand: bool | None = None  # None = unknown until first eval
-        self._receiver_demand_state: dict[str, bool] = {}  # receiver_id → last demand
-        self._unsub_boiler:   list = []
-        self._boiler_off_timer    = None   # pending hold-off before switching boiler off
-        self._startup_complete:bool = False  # guard: don't fire boiler until settled
-        self._startup_timer       = None
-        self._watchdog_unsub      = None   # periodic switch-state watchdog
-        self._listeners:      list = []
+    @property
+    def topic_set(self) -> str:
+        return self.topic + "/set"
 
-        # Global frost protection (Open-Meteo — fires boiler independently of rooms)
-        self._frost_enabled:  bool       = False
-        self._frost_threshold:float      = 2.0
-        self._frost_weather:  str | None = None
-        self._frost_active:   bool       = False
+    @property
+    def boost_remaining_heat(self) -> int:
+        return self.heat_boost_remaining
 
-    # ── Accessors ──────────────────────────────────────────────────────────────
+    @property
+    def hvac_action(self) -> HVACAction | None:
+        if self.running_state_heat == "preheating":
+            return HVACAction.PREHEATING
+        if self.running_state_heat == "heat":
+            return HVACAction.HEATING
+        if self.running_state_heat == "idle":
+            return HVACAction.IDLE
+        if self.running_state_heat == "off":
+            return HVACAction.OFF
+        return None
 
-    def get_device_mqtt(self, device_id: str) -> HiveDeviceMqtt | None:
-        return self._devices.get(device_id)
+    @property
+    def local_temperature_heat(self) -> float | None:
+        return self.current_temperature
 
-    def get_room(self, room_id: str) -> HiveRoom | None:
-        return self._rooms.get(room_id)
+    def climate_preset(self, mode: str) -> str:
+        return next((k for k, v in PRESET_MAP.items() if v == mode), PRESET_MAP[PRESET_NONE])
 
-    def all_devices(self) -> dict[str, HiveDeviceMqtt]:
-        return dict(self._devices)
+    @callback
+    def handle_mqtt_message(self, message: ReceiveMessage) -> None:
+        """Parse incoming TRV MQTT payload."""
+        topic   = message.topic
+        payload = message.payload
+        LOGGER.debug("Received from %s payload: %s", topic, payload)
 
-    def all_rooms(self) -> dict[str, HiveRoom]:
-        return dict(self._rooms)
+        if not payload:
+            LOGGER.error("Empty payload on topic %s", topic)
+            return
 
-    def room_for_device(self, device_id: str) -> HiveRoom | None:
-        room_id = self.store.room_for_device(device_id)
-        return self._rooms.get(room_id) if room_id else None
+        self.current_temperature = None
+        self.target_temperature  = None
+        self.preset_mode         = None
+        self.hvac_mode           = None
+        self.heat_boost          = False
 
-    def device_is_in_room(self, device_id: str) -> bool:
-        return self.store.room_for_device(device_id) is not None
+        try:
+            parsed_data: dict[str, Any] = json.loads(payload)
+            self.last_mqtt_payload       = parsed_data
 
-    def add_listener(self, listener) -> None:
-        self._listeners.append(listener)
+            # Heat demand signals
+            self.heat_required     = parsed_data.get("heat_required")
+            self.pi_heating_demand = parsed_data.get("pi_heating_demand")
 
-    def _notify(self) -> None:
-        for listener in self._listeners:
-            try:
-                listener()
-            except Exception as exc:
-                _LOGGER.error("Coordinator listener error: %s", exc)
+            reported_boost_remaining = (
+                int(parsed_data["temperature_setpoint_hold_duration"])
+                if parsed_data.get("system_mode") == "emergency_heating"
+                else 0
+            )
+            reported_boost_temperature = parsed_data.get("occupied_heating_setpoint", 0)
 
-    # ── Lifecycle ──────────────────────────────────────────────────────────────
+            self.running_state_heat = (
+                parsed_data.get("running_state") or "preheating"
+            )
+            self.current_temperature = parsed_data.get("local_temperature")
+
+            setpoint = parsed_data.get("occupied_heating_setpoint", 1)
+            self.target_temperature = (
+                self.heating_frost_prevention if setpoint == 1 else setpoint
+            )
+            self.preset_mode = self.climate_preset(parsed_data.get("system_mode", ""))
+
+            sys_mode = parsed_data.get("system_mode", "")
+            if sys_mode == "heat":
+                hold = parsed_data.get("temperature_setpoint_hold", True)
+                self.hvac_mode = (
+                    HVACMode.AUTO if hold is False and self.show_heating_schedule_mode
+                    else HVACMode.HEAT
+                )
+            elif sys_mode == "emergency_heating":
+                self.hvac_mode = HVACMode.HEAT
+                self.heat_boost = True
+            elif sys_mode == "off":
+                self.hvac_mode = HVACMode.OFF
+
+            if sys_mode != "emergency_heating":
+                self.pre_boost_occupied_heating_setpoint_heat = self.target_temperature
+                self.pre_boost_hvac_mode = self.hvac_mode
+
+            if self.correct_heat_boost(reported_boost_remaining, reported_boost_temperature):
+                return
+            self.record_heat_boost_state()
+            self.async_set_updated_data(parsed_data)
+
+            # Notify boiler coordinator of demand change
+            if self.on_demand_change is not None:
+                self.hass.async_create_task(
+                    self.on_demand_change(),
+                    name="hive_boiler_demand",
+                )
+
+        except (json.JSONDecodeError, KeyError) as err:
+            LOGGER.error("Error parsing TRV payload: %s", err)
+
+    def correct_heat_boost(self, reported_boost_remaining: int, reported_boost_temperature: float) -> bool:
+        if reported_boost_remaining > BOOST_ERROR:
+            if self.heat_boost_started and self.heat_boost_started_duration > 0:
+                elapsed = (utcnow() - self.heat_boost_started).total_seconds() / 60
+                self.heat_boost_remaining = int(self.heat_boost_started_duration - elapsed)
+            else:
+                self.heat_boost_remaining = 0
+            LOGGER.warning("Correcting boost remaining from %d to %d", reported_boost_remaining, self.heat_boost_remaining)
+            if self.config_entry is not None:
+                self.config_entry.async_create_task(
+                    self.hass,
+                    self.async_heating_boost(self.heat_boost_remaining, reported_boost_temperature),
+                )
+            return True
+        self.heat_boost_remaining = reported_boost_remaining
+        return False
+
+    def record_heat_boost_state(self) -> None:
+        if self.heat_boost and self.heat_boost_remaining > 0:
+            if not self.heat_boost_started:
+                self.heat_boost_started = utcnow()
+                self.heat_boost_started_duration = self.heat_boost_remaining
+        elif not self.heat_boost:
+            self.heat_boost_started = None
+            self.heat_boost_started_duration = 0
+
+    async def _async_publish_set(self, payload: str) -> None:
+        LOGGER.debug("Sending to %s: %s", self.topic_set, payload)
+        await mqtt_client.async_publish(self.hass, self.topic_set, payload)
+
+    async def async_heating_boost(self, boost_duration_minutes: int | None = None, boost_temperature: float | None = None) -> None:
+        self.pre_boost_occupied_heating_setpoint_heat = self.target_temperature
+        self.pre_boost_hvac_mode = self.hvac_mode
+        duration    = str(int(boost_duration_minutes or self.heating_boost_duration))
+        temperature = str(boost_temperature or self.heating_boost_temperature)
+        payload = (
+            r'{"system_mode":"emergency_heating","temperature_setpoint_hold_duration":' + duration
+            + r',"temperature_setpoint_hold":1,"occupied_heating_setpoint":' + temperature + r'}'
+        )
+        self.heat_boost = True
+        self.heat_boost_started = utcnow()
+        self.heat_boost_started_duration = int(duration)
+        await self._async_publish_set(payload)
+
+    async def async_heating_boost_cancel(self) -> None:
+        if self.pre_boost_hvac_mode == HVACMode.AUTO:
+            await self.async_set_hvac_mode_auto()
+        elif self.pre_boost_hvac_mode == HVACMode.HEAT:
+            temp = self.pre_boost_occupied_heating_setpoint_heat or self.heating_frost_prevention
+            await self.async_set_hvac_mode_heat(temp)
+        else:
+            await self.async_set_hvac_mode_off()
+
+    async def async_set_temperature(self, temperature: float) -> None:
+        payload = r'{"occupied_heating_setpoint":' + str(temperature) + r'}'
+        await self._async_publish_set(payload)
+
+    async def async_set_hvac_mode_off(self) -> None:
+        payload = r'{"system_mode":"off","temperature_setpoint_hold":"0"}'
+        self.hvac_mode = HVACMode.OFF
+        await self._async_publish_set(payload)
+        await sleep(0.5)
+        payload = (
+            r'{"occupied_heating_setpoint":' + str(self.heating_frost_prevention)
+            + r',"temperature_setpoint_hold":"1","temperature_setpoint_hold_duration":"65535"}'
+        )
+        await self._async_publish_set(payload)
+
+    async def async_set_hvac_mode_auto(self) -> None:
+        payload = r'{"system_mode":"heat","temperature_setpoint_hold":"0","temperature_setpoint_hold_duration":"0"}'
+        self.hvac_mode = HVACMode.AUTO
+        await self._async_publish_set(payload)
+
+    async def async_set_hvac_mode_heat(self, temperature: float, set_from_temperature: bool = False) -> None:
+        payload = (
+            r'{"system_mode":"heat","occupied_heating_setpoint":' + str(temperature)
+            + r',"temperature_setpoint_hold":"1","temperature_setpoint_hold_duration":"0"}'
+        )
+        self.hvac_mode = HVACMode.HEAT
+        await self._async_publish_set(payload)
+        if not set_from_temperature:
+            await sleep(0.5)
+            payload2 = r'{"system_mode":"heat","occupied_heating_setpoint":' + str(temperature) + r'}'
+            await self._async_publish_set(payload2)
+
+
+class BoilerSwitchCoordinator:
+    """Controls the Sonoff ZBMINIR2 relay based on demand from all TRV coordinators.
+
+    Replaces the SLR1/SLR2 receiver. Monitors all registered TRV coordinators
+    and turns the HA switch entity on/off based on heat demand.
+
+    Safety features:
+    - 30s startup settling before acting — Z2M retained messages land first
+    - 5-minute hold-off before turning OFF — prevents boiler short-cycling
+    - 20s watchdog — self-heals any state mismatch in both directions
+    - power_on_behavior set to 'off' on the ZBMINIR2 via MQTT
+    """
+
+    def __init__(self, hass: HomeAssistant, switch_entity_id: str, z2m_topic: str) -> None:
+        self.hass              = hass
+        self.switch_entity_id  = switch_entity_id
+        self.z2m_topic         = z2m_topic          # e.g. zigbee2mqtt/ZBMINIR2
+        self._trv_coordinators: list[HiveCoordinator] = []
+        self._demand:           bool | None = None   # None = unknown
+        self._off_timer                     = None
+        self._startup_timer                 = None
+        self._watchdog_unsub                = None
+        self._ready                         = False
+
+    def register_trv(self, coordinator: HiveCoordinator) -> None:
+        """Register a TRV coordinator to monitor for heat demand."""
+        if coordinator not in self._trv_coordinators:
+            self._trv_coordinators.append(coordinator)
+            coordinator.on_demand_change = self.notify_demand_change
 
     async def async_setup(self) -> None:
-        """Load all devices and rooms from storage and set up MQTT."""
-        _LOGGER.info("Hive Local coordinator starting up")
+        """Start settling timer and set power_on_behavior to off."""
+        # Ensure ZBMINIR2 starts safe after any power cycle
+        await self._set_power_on_behavior_off()
 
-        # Set up devices
-        for device_id, device_data in self.store.get_all_devices().items():
-            await self._setup_device(device_id, device_data)
-
-        # Set up rooms
-        for room_id, room_data in self.store.get_all_rooms().items():
-            await self._setup_room(room_id, room_data)
-
-        _LOGGER.info(
-            "Coordinator ready: %d device(s), %d room(s)",
-            len(self._devices), len(self._rooms)
-        )
-
-        # Allow Z2M retained messages to land before evaluating the boiler.
-        # Without this, _evaluate_boiler fires before TRV state is known and
-        # the switch gets turned on/off based on stale or default values.
         async def _mark_ready(_now=None) -> None:
-            self._startup_timer    = None
-            self._startup_complete = True
-            _LOGGER.info(
-                "Hive Local: 30s startup settling complete — evaluating boiler demand"
-            )
-
-            # ── Diagnostic dump — log every TRV state so we know what settled ──
-            for did, dd in self.store.get_all_devices().items():
-                if dd.get("type") != DEVICE_TYPE_TRV:
-                    continue
-                mqtt = self._devices.get(did)
-                if not mqtt:
-                    continue
-                room_id = self.store.room_for_device(did)
-                room    = self._rooms.get(room_id) if room_id else None
-                on_demand = (
-                    room.on_demand_enabled if room
-                    else dd.get("on_demand_enabled", False)
-                )
-                _LOGGER.info(
-                    "Startup TRV state — %s: available=%s running_state=%s "
-                    "pi_heating_demand=%s heat_required=%s on_demand_enabled=%s",
-                    dd.get("name", did),
-                    mqtt.available,
-                    mqtt.running_state,
-                    mqtt.pi_heating_demand,
-                    mqtt.heat_required,
-                    on_demand,
-                )
-
-            # Now make one clean decision with real state
-            await self._evaluate_boiler()
-            # Run watchdog immediately to catch any switch state left from startup
+            self._startup_timer = None
+            self._ready = True
+            LOGGER.info("Hive Local: boiler switch settling complete — evaluating demand")
             await self._watchdog_check()
-            # Then keep checking every 20s
-            from homeassistant.helpers.event import async_track_time_interval
-            from datetime import timedelta
             self._watchdog_unsub = async_track_time_interval(
-                self.hass, self._watchdog, timedelta(seconds=20)
+                self.hass, self._watchdog, timedelta(seconds=WATCHDOG_INTERVAL)
             )
-            _LOGGER.debug("Hive Local: boiler watchdog started (20s interval)")
 
-        # 30 seconds — enough for Z2M to replay all retained device state messages
-        # even on slow hardware or a busy broker.
-        self._startup_timer = async_call_later(self.hass, 30, _mark_ready)
+        self._startup_timer = async_call_later(self.hass, STARTUP_SETTLE, _mark_ready)
 
     async def async_unload(self) -> None:
-        if self._watchdog_unsub:
-            self._watchdog_unsub()
-            self._watchdog_unsub = None
         if self._startup_timer:
             self._startup_timer()
             self._startup_timer = None
-        if self._boiler_off_timer:
-            self._boiler_off_timer()
-            self._boiler_off_timer = None
-        for unsub in self._unsub_boiler:
-            unsub()
-        for mqtt in self._devices.values():
-            await mqtt.async_unload()
-        for room in self._rooms.values():
-            await room.async_unload()
-
-    # ── Device management ──────────────────────────────────────────────────────
-
-    async def async_add_device(self, device_id: str, device_data: dict) -> None:
-        """Add a new device at runtime (from config flow)."""
-        await self.store.async_save_device(device_id, device_data)
-        await self._setup_device(device_id, device_data)
-        self.hass.bus.async_fire(f"{DOMAIN}_device_added", {
-            "entry_id":  self.entry_id,
-            "device_id": device_id,
-            "data":      device_data,
-        })
-        self._notify()
-
-    async def async_remove_device(self, device_id: str) -> None:
-        """Remove a device — also removes it from any room."""
-        mqtt = self._devices.pop(device_id, None)
-        if mqtt:
-            await mqtt.async_unload()
-        await self.store.async_remove_device(device_id)
-        self.hass.bus.async_fire(f"{DOMAIN}_device_removed", {
-            "entry_id":  self.entry_id,
-            "device_id": device_id,
-        })
-        self._notify()
-
-    async def _setup_device(self, device_id: str, device_data: dict) -> None:
-        dtype = device_data.get("type")
-        if dtype not in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_BOILER_SWITCH):
-            return  # standalone sensor — no MQTT needed
-
-        mqtt = HiveDeviceMqtt(
-            hass        = self.hass,
-            device_id   = device_id,
-            device_type = dtype,
-            model       = device_data.get("model", ""),
-            topic       = device_data.get("mqtt_topic", ""),
-            name        = device_data.get("name", device_id),
-        )
-        self._devices[device_id] = mqtt
-
-        # Wire to boiler demand (TRVs and receivers only — not the switch itself)
-        if dtype in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER):
-            mqtt.add_listener(self._on_device_state_change)
-
-        await mqtt.async_setup()
-
-        # Ensure ZBMINIR2 starts in safe state after power loss
-        if dtype == DEVICE_TYPE_BOILER_SWITCH:
-            from asyncio import sleep
-            await sleep(2)  # wait for retained state message to land
-            await mqtt.async_ensure_power_on_behavior_off()
-
-    # ── Room management ────────────────────────────────────────────────────────
-
-    async def async_add_room(self, room_id: str, room_data: dict) -> None:
-        await self.store.async_save_room(room_id, room_data)
-        room = await self._setup_room(room_id, room_data)
-
-        # Hide individual TRV climate entities
-        self._set_trv_entities_hidden(room_data.get("device_ids", []), hide=True)
-
-        self.hass.bus.async_fire(EVENT_ROOM_ADDED, {
-            "entry_id": self.entry_id,
-            "room_id":  room_id,
-            "room":     room,
-        })
-        self._notify()
-
-    async def async_update_room(
-        self,
-        room_id: str,
-        new_device_ids: list[str],
-        new_sensor_ids: list[str],
-    ) -> None:
-        room = self._rooms.get(room_id)
-        if not room:
-            return
-        old_device_ids = list(room.device_ids)
-        room.update_members(new_device_ids, new_sensor_ids)
-
-        # Update storage
-        room_data = self.store.get_room(room_id) or {}
-        room_data["device_ids"] = new_device_ids
-        room_data["sensor_ids"] = new_sensor_ids
-        await self.store.async_save_room(room_id, room_data)
-
-        # Adjust entity visibility
-        removed = [d for d in old_device_ids if d not in new_device_ids]
-        added   = [d for d in new_device_ids if d not in old_device_ids]
-        self._set_trv_entities_hidden(removed, hide=False)
-        self._set_trv_entities_hidden(added,   hide=True)
-
-        self.hass.bus.async_fire(EVENT_ROOM_UPDATED, {
-            "entry_id":  self.entry_id,
-            "room_id":   room_id,
-            "added":     added,
-            "removed":   removed,
-        })
-        self._notify()
-
-    async def async_remove_room(self, room_id: str) -> None:
-        room = self._rooms.pop(room_id, None)
-        if room:
-            # Restore all TRV entities
-            self._set_trv_entities_hidden(room.device_ids, hide=False)
-            await room.async_unload()
-        await self.store.async_remove_room(room_id)
-        self.hass.bus.async_fire(EVENT_ROOM_REMOVED, {
-            "entry_id": self.entry_id,
-            "room_id":  room_id,
-        })
-        self._notify()
-
-    async def _setup_room(self, room_id: str, room_data: dict) -> HiveRoom:
-        room = HiveRoom(
-            hass           = self.hass,
-            coordinator    = self,
-            room_id        = room_id,
-            room_name      = room_data.get("name", room_id),
-            device_ids     = room_data.get("device_ids", []),
-            sensor_ids     = room_data.get("sensor_ids", []),
-            schedule       = room_data.get("schedule", []),
-            boost_temp     = float(room_data.get("boost_temp", 22.0)),
-            boost_minutes  = int(room_data.get("boost_minutes", 30)),
-            frost_temp     = float(room_data.get("frost_temp", 7.0)),
-            weather_entity = room_data.get("weather_entity"),
-            frost_enabled  = bool(room_data.get("frost_enabled", False)),
-        )
-        room.receiver_device_id = room_data.get("receiver_device_id")
-        room.on_demand_enabled  = room_data.get("on_demand_enabled", False)
-        room.add_listener(self._on_room_state_change)
-        await room.async_setup()
-        self._rooms[room_id] = room
-        return room
-
-    # ── Boiler demand ──────────────────────────────────────────────────────────
-
-    @callback
-    def _on_device_state_change(self) -> None:
-        self.hass.async_create_task(
-            self._evaluate_boiler(), name="hive_local_boiler_eval"
-        )
-        self._notify()
-
-    @callback
-    def _on_room_state_change(self) -> None:
-        self.hass.async_create_task(
-            self._evaluate_boiler(), name="hive_local_boiler_eval"
-        )
-        self._notify()
-
-    def _trv_calling(self, mqtt) -> bool:
-        """True if this TRV is currently demanding heat.
-
-        Unavailable TRVs never vote — a valve that has dropped off the mesh
-        neither holds the boiler on nor silently counts as satisfied.
-        """
-        if not mqtt.available:
-            return False
-        if mqtt.running_state == "heat" or mqtt.heat_required is True:
-            return True
-        return (
-            mqtt.pi_heating_demand is not None
-            and mqtt.pi_heating_demand > TRV_DEMAND_THRESHOLD
-        )
-
-    def _any_trv_calling(self) -> tuple[bool, list[str]]:
-        """Check every on-demand-enabled TRV for heat demand.
-
-        Returns (demand, names_calling).
-        TRVs in rooms inherit the room's on_demand_enabled flag.
-        Standalone TRVs use their own on_demand_enabled flag.
-        Unavailable TRVs are excluded.
-        """
-        calling: list[str] = []
-        unavailable: list[str] = []
-        for device_id, device_data in self.store.get_all_devices().items():
-            if device_data.get("type") != DEVICE_TYPE_TRV:
-                continue
-            # Check on_demand_enabled
-            room_id = self.store.room_for_device(device_id)
-            if room_id:
-                room = self._rooms.get(room_id)
-                if not room or not room.on_demand_enabled:
-                    continue
-            else:
-                if not device_data.get("on_demand_enabled", True):
-                    continue
-            mqtt = self._devices.get(device_id)
-            name = device_data.get("name", device_id)
-            if not mqtt or not mqtt.available:
-                unavailable.append(name)
-                continue
-            if self._trv_calling(mqtt):
-                calling.append(name)
-        if unavailable:
-            _LOGGER.debug("TRVs excluded from demand (unavailable): %s", unavailable)
-        return bool(calling), calling
+        if self._off_timer:
+            self._off_timer()
+            self._off_timer = None
+        if self._watchdog_unsub:
+            self._watchdog_unsub()
+            self._watchdog_unsub = None
 
     @callback
     def _watchdog(self, _now=None) -> None:
-        """Periodic safety check — runs every 20 seconds after startup settling.
-
-        If the ZBMINIR2 is ON but neither TRV demand nor frost protection
-        justifies it, turn it off immediately. This catches:
-        - Switch stuck ON from a previous session
-        - Any state drift caused by external actors (manual toggle, HA automation)
-        - Cases where the hold-off timer fired but _set_boiler was skipped
-        """
-        self.hass.async_create_task(
-            self._watchdog_check(), name="hive_local_watchdog"
-        )
+        self.hass.async_create_task(self._watchdog_check(), name="hive_boiler_watchdog")
 
     async def _watchdog_check(self) -> None:
-        if not self.boiler_entity:
+        """Compare actual switch state to required demand — correct if mismatched."""
+        if not self.switch_entity_id:
             return
-
-        # Determine what the switch state actually is right now
-        switch_entity = self.hass.states.get(self.boiler_entity)
-        if switch_entity is None:
+        state = self.hass.states.get(self.switch_entity_id)
+        if state is None:
             return
-        switch_on = switch_entity.state in ("on", "ON", "heat")
-
-        # Evaluate actual demand
-        frost                   = self.check_frost_protection()
-        trv_demand, calling_trvs = self._any_trv_calling()
-        calling_rooms = [
-            r.room_name for r in self._rooms.values()
-            if r.on_demand_enabled and r.heat_required
-        ]
-        room_demand = bool(calling_rooms)
-        demand      = trv_demand or room_demand or frost
+        switch_on = state.state in ("on", "ON")
+        demand, callers = self._evaluate_demand()
 
         if switch_on and not demand:
-            _LOGGER.warning(
-                "Watchdog: switch ON but no demand — forcing OFF (%s). "
-                "TRVs calling: none. Rooms calling: none. Frost: %s",
-                self.boiler_entity,
-                frost,
+            LOGGER.warning(
+                "Boiler watchdog: switch ON but no demand — forcing OFF (%s). "
+                "TRVs calling: none",
+                self.switch_entity_id,
             )
-            self._boiler_demand = True
-            await self._set_boiler(False)
+            self._demand = True
+            await self._set_switch(False)
 
         elif not switch_on and demand:
-            sources = []
-            if calling_trvs:
-                sources.append(f"TRVs: {', '.join(calling_trvs)}")
-            if calling_rooms:
-                sources.append(f"Rooms: {', '.join(calling_rooms)}")
-            if frost:
-                sources.append("frost protection")
-            _LOGGER.warning(
-                "Watchdog: switch OFF but demand exists — forcing ON (%s). "
+            LOGGER.warning(
+                "Boiler watchdog: switch OFF but demand exists — forcing ON (%s). "
                 "Demand from: %s",
-                self.boiler_entity,
-                " | ".join(sources),
+                self.switch_entity_id,
+                ", ".join(callers),
             )
-            self._boiler_demand = False
-            await self._set_boiler(True)
+            self._demand = False
+            await self._set_switch(True)
 
         elif switch_on and demand:
-            sources = []
-            if calling_trvs:
-                sources.append(f"TRVs: {', '.join(calling_trvs)}")
-            if calling_rooms:
-                sources.append(f"Rooms: {', '.join(calling_rooms)}")
-            if frost:
-                sources.append("frost protection")
-            _LOGGER.debug(
-                "Watchdog: switch ON with valid demand from %s",
-                " | ".join(sources),
+            LOGGER.debug(
+                "Boiler watchdog: switch ON — valid demand from %s",
+                ", ".join(callers),
             )
 
-    async def _evaluate_boiler(self) -> None:
-        """Evaluate heat demand and signal receivers.
-
-        Two demand paths:
-        1. Per-receiver demand — each room signals its assigned receiver directly
-           via MQTT. A receiver fires when any of its assigned rooms needs heat.
-        2. Global fallback boiler_entity — for non-Hive receivers (HA switch/climate).
-           Fires when ANY room needs heat (legacy path, still supported).
-        3. Global frost protection — fires all receivers when outdoor temp too low.
-        """
-        if not self._startup_complete:
-            return  # Still in settling period — don't act on incomplete state
-
-        frost_trigger = self.check_frost_protection()
-
-        if frost_trigger and not self._frost_active:
-            self._frost_active = True
-            _LOGGER.info(
-                "Global frost protection active — firing all receivers (outdoor ≤ %.1f°C)",
-                self._frost_threshold,
+    def _evaluate_demand(self) -> tuple[bool, list[str]]:
+        """Check all TRVs for heat demand. Returns (demand, list_of_caller_names)."""
+        callers: list[str] = []
+        for coord in self._trv_coordinators:
+            calling = (
+                coord.running_state_heat == "heat"
+                or coord.heat_required is True
+                or (coord.pi_heating_demand is not None and coord.pi_heating_demand > 0)
             )
-        elif not frost_trigger and self._frost_active:
-            self._frost_active = False
-            _LOGGER.info("Global frost protection cleared")
-
-        # ── Per-receiver demand ────────────────────────────────────────────────
-        # Build {receiver_device_id: bool} — True if any assigned room OR TRV needs heat
-        receiver_demand: dict[str, bool] = {}
-
-        # From rooms
-        for room in self._rooms.values():
-            if not room.receiver_device_id:
-                continue
-            rid = room.receiver_device_id
-            needed = room.heat_required or frost_trigger
-            receiver_demand[rid] = receiver_demand.get(rid, False) or needed
-
-        # Per-TRV demand — only for on-demand enabled devices/rooms
-        # (ZBMINIR2 path — separate from the global boiler_entity)
-        for device_id, device_data in self.store.get_all_devices().items():
-            if device_data.get("type") != DEVICE_TYPE_TRV:
-                continue
-            room_id = self.store.room_for_device(device_id)
-            if room_id:
-                room = self._rooms.get(room_id)
-                if not room or not room.on_demand_enabled:
-                    continue
-            else:
-                if not device_data.get("on_demand_enabled", True):
-                    continue
-            rid = device_data.get("receiver_device_id")
-            if not rid and room_id:
-                room = self._rooms.get(room_id)
-                if room:
-                    rid = room.receiver_device_id
-            if not rid:
-                continue
-            mqtt = self._devices.get(device_id)
-            if not mqtt:
-                continue
-            trv_heating = (
-                mqtt.running_state == "heat"
-                or mqtt.heat_required is True
-                or mqtt.pi_heating_demand is not None and mqtt.pi_heating_demand > 0
-            )
-            needed = trv_heating or frost_trigger
-            receiver_demand[rid] = receiver_demand.get(rid, False) or needed
-            if needed:
-                _LOGGER.debug(
-                    "TRV %s demanding heat → receiver %s",
-                    device_data.get("name", device_id), rid,
-                )
-
-        # Signal each receiver
-        for receiver_id, needed in receiver_demand.items():
-            mqtt = self._devices.get(receiver_id)
-            if not mqtt:
-                continue
-            prev = self._receiver_demand_state.get(receiver_id)
-            if prev == needed:
-                continue
-            self._receiver_demand_state[receiver_id] = needed
-            try:
-                if needed:
-                    temp = mqtt.target_temperature or 20.0
-                    await mqtt.async_set_mode_heat(temp)
-                else:
-                    await mqtt.async_set_mode_schedule()
-                _LOGGER.info(
-                    "Receiver %s → %s (demand from rooms)",
-                    mqtt.name, "HEAT" if needed else "SCHEDULE",
-                )
-            except Exception as exc:
-                _LOGGER.warning("Receiver demand failed for %s: %s", receiver_id, exc)
-
-        # ── Global boiler_entity ───────────────────────────────────────────────
-        # Fires when ANY TRV calls, ANY room calls, or frost protection is active.
-        # TRVs are checked directly so a valve fires the boiler whether or not it
-        # belongs to a room and whether or not a receiver is assigned.
-        if not self.boiler_entity:
-            return
-
-        trv_demand, calling = self._any_trv_calling()
-        room_demand = any(
-            room.heat_required
-            for room in self._rooms.values()
-            if room.on_demand_enabled
-        )
-        needed = trv_demand or room_demand or frost_trigger
-
-        if needed:
-            # Cancel any pending off timer and fire immediately
-            if self._boiler_off_timer:
-                self._boiler_off_timer()
-                self._boiler_off_timer = None
             if calling:
-                _LOGGER.debug("TRVs calling for heat: %s", calling)
-            await self._set_boiler(True)
+                callers.append(coord.topic.split("/")[-1])
+        return bool(callers), callers
+
+    async def notify_demand_change(self) -> None:
+        """Called by TRV coordinators when their state changes."""
+        if not self._ready:
             return
+        demand, callers = self._evaluate_demand()
+        if demand:
+            if self._off_timer:
+                self._off_timer()
+                self._off_timer = None
+            if callers:
+                LOGGER.debug("Heat demand from: %s", ", ".join(callers))
+            await self._set_switch(True)
+        else:
+            if self._off_timer:
+                return  # Already waiting to turn off
+            async def _do_off(_now=None) -> None:
+                self._off_timer = None
+                d, _ = self._evaluate_demand()
+                if not d:
+                    await self._set_switch(False)
+            self._off_timer = async_call_later(self.hass, 300, _do_off)
 
-        # Demand clear — hold off before dropping so independent PI controllers
-        # crossing zero at slightly different moments don't chatter the relay.
-        if not self._boiler_demand or self._boiler_off_timer:
+    async def _set_switch(self, on: bool) -> None:
+        if not self.switch_entity_id:
             return
-
-        async def _drop(_now) -> None:
-            self._boiler_off_timer = None
-            again, _ = self._any_trv_calling()
-            room_still = any(
-                r.heat_required for r in self._rooms.values()
-                if r.on_demand_enabled
-            )
-            if again or room_still or self.check_frost_protection():
-                return
-            await self._set_boiler(False)
-
-        _LOGGER.debug(
-            "Demand clear — boiler off in %ss unless demand returns",
-            BOILER_MIN_OFF_DELAY,
-        )
-        self._boiler_off_timer = async_call_later(
-            self.hass, BOILER_MIN_OFF_DELAY, _drop
-        )
-
-    async def _set_boiler(self, on: bool) -> None:
-        """Drive the heat-demand switch — ZBMINIR2, relay, climate, input_boolean.
-
-        Uses turn_on / turn_off which works for switch, input_boolean, and climate
-        domains alike. The domain is taken from the entity_id prefix so no extra
-        config is needed when swapping between device types.
-        """
-        if not self.boiler_entity:
+        if self._demand is not None and on == self._demand:
             return
-        # None means unknown — always act. Otherwise only act on a real change.
-        if self._boiler_demand is not None and on == self._boiler_demand:
-            return
-        self._boiler_demand = on
-        domain  = self.boiler_entity.split(".")[0]
+        self._demand = on
+        domain  = self.switch_entity_id.split(".")[0]
         service = "turn_on" if on else "turn_off"
-        action  = "ON  → firing boiler" if on else "OFF → boiler demand cleared"
         try:
             await self.hass.services.async_call(
                 domain, service,
-                {ATTR_ENTITY_ID: self.boiler_entity},
+                {"entity_id": self.switch_entity_id},
                 blocking=False,
             )
-            _LOGGER.info("Heat demand switch %s (%s)", action, self.boiler_entity)
+            LOGGER.info(
+                "Boiler switch → %s (%s)",
+                "ON — firing boiler" if on else "OFF — boiler demand cleared",
+                self.switch_entity_id,
+            )
         except Exception as exc:
-            _LOGGER.warning(
-                "Heat demand switch call failed for %s: %s", self.boiler_entity, exc
-            )
+            LOGGER.warning("Boiler switch call failed: %s", exc)
 
-    def update_boiler_entity(self, entity_id: str | None) -> None:
-        self.boiler_entity = entity_id
-
-    def assign_room_receiver(self, room_id: str, receiver_device_id: str | None) -> None:
-        """Assign a receiver device to a room for on-demand heat control."""
-        room = self._rooms.get(room_id)
-        if room:
-            room.receiver_device_id = receiver_device_id
-            _LOGGER.info(
-                "Room %s → receiver %s", room_id, receiver_device_id or "none"
-            )
-
-    async def async_assign_device_receiver(
-        self, device_id: str, receiver_device_id: str | None
-    ) -> None:
-        """Assign a receiver to a standalone TRV for on-demand heat control."""
-        await self.store.async_set_device_receiver(device_id, receiver_device_id)
-        _LOGGER.info(
-            "TRV %s → receiver %s", device_id, receiver_device_id or "none"
-        )
-
-    def update_frost_protection(
-        self,
-        enabled: bool,
-        threshold: float,
-        weather_entity: str | None,
-    ) -> None:
-        """Update global frost protection settings (from Open-Meteo)."""
-        self._frost_enabled   = enabled
-        self._frost_threshold = threshold
-        self._frost_weather   = weather_entity
-        _LOGGER.info(
-            "Global frost protection: enabled=%s threshold=%.1f°C entity=%s",
-            enabled, threshold, weather_entity,
-        )
-
-    def check_frost_protection(self) -> bool:
-        """Return True if outdoor temp is at or below frost threshold."""
-        if not self._frost_enabled or not self._frost_weather:
-            return False
-        state = self.hass.states.get(self._frost_weather)
-        if not state:
-            return False
+    async def _set_power_on_behavior_off(self) -> None:
+        """Set ZBMINIR2 power_on_behavior to off via MQTT."""
+        if not self.z2m_topic:
+            return
+        topic   = self.z2m_topic + "/set"
+        payload = '{"power_on_behavior":"off"}'
         try:
-            outdoor = float(state.attributes.get("temperature", 99))
-            return outdoor <= self._frost_threshold
-        except (TypeError, ValueError):
-            return False
-
-    # ── Entity registry — hide/restore TRV climate entities ───────────────────
-
-    def _set_trv_entities_hidden(self, device_ids: list[str], hide: bool) -> None:
-        ent_reg = er.async_get(self.hass)
-        for device_id in device_ids:
-            uid = uid_device(device_id, "climate")
-            for entry in ent_reg.entities.values():
-                if entry.unique_id == uid and entry.entity_id.startswith("climate."):
-                    if hide:
-                        ent_reg.async_update_entity(
-                            entry.entity_id,
-                            hidden_by=RegistryEntryHider.INTEGRATION,
-                        )
-                    else:
-                        if entry.hidden_by == RegistryEntryHider.INTEGRATION:
-                            ent_reg.async_update_entity(
-                                entry.entity_id, hidden_by=None
-                            )
-                    _LOGGER.info(
-                        "TRV entity %s %s",
-                        entry.entity_id,
-                        "hidden (in room)" if hide else "restored",
-                    )
-                    break
-
-    # ── Restore entity suppression on startup ──────────────────────────────────
-
-    def restore_entity_suppression(self) -> None:
-        """Re-apply entity hiding for all room members after HA restart."""
-        for room_id, room in self._rooms.items():
-            self._set_trv_entities_hidden(room.device_ids, hide=True)
+            await mqtt_client.async_publish(self.hass, topic, payload)
+            LOGGER.info("ZBMINIR2: power_on_behavior set to off (%s)", topic)
+        except Exception as exc:
+            LOGGER.debug("Could not set power_on_behavior: %s", exc)

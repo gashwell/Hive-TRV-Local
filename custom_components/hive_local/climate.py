@@ -1,337 +1,227 @@
-"""Climate platform — individual TRV/receiver entities and room entities."""
+"""Sensor platform for Hive Local Thermostat."""
+
 from __future__ import annotations
 
-import logging
+from dataclasses import dataclass
+from math import floor
 from typing import Any
 
-from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACAction, HVACMode
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.components.climate import (
+    ATTR_HVAC_MODE,
+    PRESET_BOOST,
+    PRESET_NONE,
+    ClimateEntity,
+    ClimateEntityDescription,
+    ClimateEntityFeature,
+    HVACMode,
+)
+from homeassistant.const import (
+    ATTR_TEMPERATURE,
+    UnitOfTemperature,
+)
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .common import HiveConfigEntry
 from .const import (
-    DATA_COORDINATOR, DEVICE_TYPE_RECEIVER, DEVICE_TYPE_TRV, DOMAIN,
-    MAX_TEMP, MIN_TEMP, MODE_BOOST, MODE_MANUAL, MODE_OFF, MODE_SCHEDULE,
-    TEMP_STEP, uid_device, uid_room,
+    DOMAIN,
+    HIVE_BOOST,
+    LOGGER,
 )
-from .coordinator import HiveLocalCoordinator
-from .mqtt import HiveDeviceMqtt
-from .room import HiveRoom
+from .coordinator import HiveCoordinator
+from .entity import HiveEntity, HiveEntityDescription
 
-_LOGGER = logging.getLogger(__name__)
+PRESET_MAP = {
+    PRESET_NONE: "",
+    PRESET_BOOST: HIVE_BOOST,
+}
+
+
+@dataclass(frozen=True, kw_only=True)
+class HiveClimateEntityDescription(
+    HiveEntityDescription,
+    ClimateEntityDescription,
+):
+    """Class describing Hive sensor entities."""
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
+    hass: HomeAssistant,  # noqa: ARG001
+    config_entry: HiveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: HiveLocalCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    """Set up the sensor platform."""
 
-    entities: list[ClimateEntity] = []
+    coordinator = config_entry.runtime_data.coordinator
 
-    # Device entities (TRV and receiver)
-    for device_id, device_data in coordinator.store.get_all_devices().items():
-        dtype = device_data.get("type")
-        if dtype in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER):
-            mqtt = coordinator.get_device_mqtt(device_id)
-            if mqtt:
-                entities.append(HiveDeviceClimate(coordinator, device_id, mqtt, device_data))
+    hive_climate_entity_description = HiveClimateEntityDescription(
+        key="climate",
+        translation_key="climate",
+        name=config_entry.title,
+    )
 
-    # Room entities
-    for room_id, room in coordinator.all_rooms().items():
-        entities.append(HiveRoomClimate(coordinator, room_id, room))
+    _entities = [
+        HiveClimateEntity(
+            entity_description=hive_climate_entity_description, coordinator=coordinator
+        )
+    ]
 
-    async_add_entities(entities)
-
-    # Listen for runtime additions
-    @callback
-    def _on_device_added(event: Any) -> None:
-        if event.data.get("entry_id") != entry.entry_id:
-            return
-        device_id   = event.data.get("device_id")
-        device_data = event.data.get("data", {})
-        dtype = device_data.get("type")
-        if dtype in (DEVICE_TYPE_TRV, DEVICE_TYPE_RECEIVER):
-            mqtt = coordinator.get_device_mqtt(device_id)
-            if mqtt:
-                async_add_entities([HiveDeviceClimate(coordinator, device_id, mqtt, device_data)])
-
-    @callback
-    def _on_room_added(event: Any) -> None:
-        if event.data.get("entry_id") != entry.entry_id:
-            return
-        room_id = event.data.get("room_id")
-        room    = event.data.get("room")
-        if room:
-            async_add_entities([HiveRoomClimate(coordinator, room_id, room)])
-
-    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_device_added", _on_device_added))
-    entry.async_on_unload(hass.bus.async_listen(f"{DOMAIN}_room_added",   _on_room_added))
+    async_add_entities(climateEntity for climateEntity in _entities)
 
 
-# ── Device climate entity ──────────────────────────────────────────────────────
+class HiveClimateEntity(HiveEntity, ClimateEntity):
+    """hive_local Climate class."""
 
-class HiveDeviceClimate(ClimateEntity):
-    """Individual TRV or receiver climate entity."""
-
-    _attr_temperature_unit        = UnitOfTemperature.CELSIUS
-    _attr_min_temp                = MIN_TEMP
-    _attr_max_temp                = MAX_TEMP
-    _attr_target_temperature_step = TEMP_STEP
-    _attr_has_entity_name         = True
+    entity_description: HiveClimateEntityDescription
 
     def __init__(
         self,
-        coordinator: HiveLocalCoordinator,
-        device_id: str,
-        mqtt: HiveDeviceMqtt,
-        device_data: dict,
+        entity_description: HiveClimateEntityDescription,
+        coordinator: HiveCoordinator,
     ) -> None:
-        self._coordinator  = coordinator
-        self._device_id    = device_id
-        self._mqtt         = mqtt
-        self._device_data  = device_data
-        self._attr_unique_id = uid_device(device_id, "climate")
-        self._attr_name      = device_data.get("name", device_id)
+        """Initialize the sensor class."""
 
-        dtype = device_data.get("type")
-        if dtype == DEVICE_TYPE_TRV:
-            self._attr_hvac_modes        = [HVACMode.HEAT, HVACMode.OFF]
-            self._attr_supported_features = (
-                ClimateEntityFeature.TARGET_TEMPERATURE
-                | ClimateEntityFeature.TURN_ON
-                | ClimateEntityFeature.TURN_OFF
-            )
+        self.entity_description = entity_description
+        self._attr_unique_id = (
+            f"{DOMAIN}_{entity_description.name}_{entity_description.key}".lower()
+        )
+        self._attr_has_entity_name = True
+
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+
+        if coordinator.show_heating_schedule_mode:
+            self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.AUTO]
         else:
-            # Receiver supports auto (schedule) mode
-            self._attr_hvac_modes        = [HVACMode.HEAT, HVACMode.AUTO, HVACMode.OFF]
-            self._attr_supported_features = (
-                ClimateEntityFeature.TARGET_TEMPERATURE
-                | ClimateEntityFeature.TURN_ON
-                | ClimateEntityFeature.TURN_OFF
-            )
+            self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
+        self._attr_hvac_mode = None
+        self._attr_preset_modes = list(PRESET_MAP.keys())
+        self._attr_preset_mode = None
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._device_id)},
-            name=self._device_data.get("name", self._device_id),
-            model=self._device_data.get("model", self._device_data.get("type", "TRV")),
-            manufacturer="Hive",
+        self._attr_supported_features = (
+            ClimateEntityFeature.TURN_OFF
+            | ClimateEntityFeature.TURN_ON
+            | ClimateEntityFeature.TARGET_TEMPERATURE
+            | ClimateEntityFeature.PRESET_MODE
         )
 
-    async def async_added_to_hass(self) -> None:
-        self._mqtt.add_listener(self._handle_update)
+        self._attr_max_temp = 32
+        self._attr_min_temp = 5
+        self._attr_target_temperature_step = 0.5
 
-    @callback
-    def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self._hvac_mode_set_from_temperature = False
 
-    @property
-    def available(self) -> bool:
-        return self._mqtt.available
-
-    @property
-    def current_temperature(self) -> float | None:
-        return self._mqtt.current_temperature
-
-    @property
-    def target_temperature(self) -> float | None:
-        return self._mqtt.target_temperature
-
-    @property
-    def hvac_mode(self) -> HVACMode | None:
-        return self._mqtt.hvac_mode
-
-    @property
-    def hvac_action(self) -> HVACAction | None:
-        return self._mqtt.hvac_action
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        attrs: dict = {}
-        dtype = self._device_data.get("type")
-
-        if self._mqtt.battery is not None:
-            attrs["battery"] = self._mqtt.battery
-        if self._mqtt.pi_heating_demand is not None:
-            attrs["pi_heating_demand"] = self._mqtt.pi_heating_demand
-        if self._mqtt.local_temp_calibration is not None:
-            attrs["local_temperature_calibration"] = self._mqtt.local_temp_calibration
-        if self._mqtt.heat_boost_active:
-            attrs["boost_remaining_minutes"] = self._mqtt.heat_boost_remaining
-
-        if dtype == DEVICE_TYPE_TRV:
-            # Show which receiver this TRV fires
-            recv_id = self._coordinator.store.get_device_receiver(self._device_id)
-            if not recv_id:
-                room_id = self._coordinator.store.room_for_device(self._device_id)
-                if room_id:
-                    room_data = self._coordinator.store.get_room(room_id) or {}
-                    recv_id = room_data.get("receiver_device_id")
-            if recv_id:
-                recv_data = self._coordinator.store.get_device(recv_id) or {}
-                attrs["receiver_name"] = recv_data.get("name", recv_id)
-
-        elif dtype == DEVICE_TYPE_RECEIVER:
-            # Show which rooms/TRVs are currently demanding heat from this receiver
-            demanding: list[str] = []
-
-            # From rooms assigned to this receiver
-            for room in self._coordinator.all_rooms().values():
-                if room.receiver_device_id == self._device_id and room.heat_required:
-                    demanding.append(room.room_name)
-
-            # From individual TRVs assigned directly to this receiver
-            for did, dd in self._coordinator.store.get_all_devices().items():
-                if dd.get("receiver_device_id") != self._device_id:
-                    continue
-                mqtt = self._coordinator.get_device_mqtt(did)
-                if mqtt and (mqtt.running_state == "heat" or mqtt.heat_required is True):
-                    demanding.append(dd.get("name", did))
-
-            attrs["heat_demand_active"] = len(demanding) > 0
-            attrs["demanded_by"]        = demanding if demanding else []
-
-        return attrs
-
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        temp = kwargs.get(ATTR_TEMPERATURE)
-        if temp:
-            await self._mqtt.async_set_mode_heat(float(temp))
-
-    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        if hvac_mode == HVACMode.OFF:
-            await self._mqtt.async_set_mode_off()
-        elif hvac_mode == HVACMode.AUTO:
-            await self._mqtt.async_set_mode_schedule()
-        elif hvac_mode == HVACMode.HEAT:
-            temp = self._mqtt.target_temperature or 20.0
-            await self._mqtt.async_set_mode_heat(temp)
-
-    async def async_turn_on(self)  -> None: await self.async_set_hvac_mode(HVACMode.HEAT)
-    async def async_turn_off(self) -> None: await self.async_set_hvac_mode(HVACMode.OFF)
-
-
-# ── Room climate entity ────────────────────────────────────────────────────────
-
-_ROOM_PRESETS  = [MODE_SCHEDULE, MODE_MANUAL, MODE_BOOST]
-_ROOM_FEATURES = (
-    ClimateEntityFeature.TARGET_TEMPERATURE
-    | ClimateEntityFeature.PRESET_MODE
-    | ClimateEntityFeature.TURN_ON
-    | ClimateEntityFeature.TURN_OFF
-)
-
-
-class HiveRoomClimate(ClimateEntity):
-    """Virtual climate entity for a heating room."""
-
-    _attr_temperature_unit        = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes              = [HVACMode.HEAT, HVACMode.OFF]
-    _attr_min_temp                = MIN_TEMP
-    _attr_max_temp                = MAX_TEMP
-    _attr_target_temperature_step = TEMP_STEP
-    _attr_has_entity_name         = True
-    _attr_supported_features      = _ROOM_FEATURES
-
-    def __init__(
-        self,
-        coordinator: HiveLocalCoordinator,
-        room_id: str,
-        room: HiveRoom,
-    ) -> None:
-        self._coordinator  = coordinator
-        self._room_id      = room_id
-        self._room         = room
-        self._attr_unique_id = uid_room(room_id, "climate")
-        self._attr_name      = room.room_name
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"room_{self._room_id}")},
-            name=self._room.room_name,
-            model="Heating Room",
-            manufacturer="Hive Local",
-        )
-
-    async def async_added_to_hass(self) -> None:
-        self._room.add_listener(self._handle_update)
-
-    @callback
-    def _handle_update(self) -> None:
-        self.async_write_ha_state()
-
-    @property
-    def available(self) -> bool:
-        return self._room.available
-
-    @property
-    def current_temperature(self) -> float | None:
-        return self._room.current_temperature
-
-    @property
-    def target_temperature(self) -> float | None:
-        return self._room.setpoint
-
-    @property
-    def hvac_mode(self) -> HVACMode:
-        return HVACMode.OFF if self._room.mode == MODE_OFF else HVACMode.HEAT
-
-    @property
-    def hvac_action(self) -> HVACAction:
-        return self._room.hvac_action
-
-    @property
-    def preset_modes(self) -> list[str]:
-        return _ROOM_PRESETS
-
-    @property
-    def preset_mode(self) -> str | None:
-        m = self._room.mode
-        return None if m == MODE_OFF else m
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        attrs: dict = {
-            "mode":           self._room.mode,
-            "member_detail":  self._room.member_detail,
-            "member_count":   len(self._room.device_ids),
-            "heat_required":  self._room.heat_required,
-            "schedule":       self._room.schedule,
-        }
-        slot = self._room.current_schedule_slot
-        if slot:
-            attrs["current_schedule_slot"] = slot
-        if self._room.mode == MODE_BOOST:
-            attrs["boost_remaining_minutes"] = self._room.boost_remaining_minutes
-            attrs["boost_ends"]              = self._room.boost_end_iso
-        if self._room.outdoor_temperature is not None:
-            attrs["outdoor_temperature"]     = self._room.outdoor_temperature
-        if self._room.frost_active:
-            attrs["frost_protection_active"] = True
-        # Receiver name — used by panel card
-        if self._room.receiver_device_id:
-            recv_data = self._coordinator.store.get_device(self._room.receiver_device_id) or {}
-            attrs["receiver_name"] = recv_data.get("name", self._room.receiver_device_id)
-        return attrs
-
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        temp = kwargs.get(ATTR_TEMPERATURE)
-        if temp is not None:
-            await self._room.async_set_temperature(float(temp))
-
-    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        await self._room.async_set_mode(
-            MODE_OFF if hvac_mode == HVACMode.OFF else MODE_MANUAL
-        )
+        super().__init__(entity_description, coordinator)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        await self._room.async_set_mode(preset_mode)
+        """Set the preset mode."""
 
-    async def async_turn_on(self)  -> None: await self._room.async_set_mode(MODE_MANUAL)
-    async def async_turn_off(self) -> None: await self._room.async_set_mode(MODE_OFF)
+        self._attr_preset_mode = preset_mode
+
+        if preset_mode == "boost":
+            self.coordinator.pre_boost_hvac_mode = self._attr_hvac_mode
+            self.coordinator.pre_boost_occupied_heating_setpoint_heat = (
+                self._attr_target_temperature
+            )
+
+            await self.coordinator.async_heating_boost()
+
+        elif self.coordinator.pre_boost_hvac_mode is not None:
+            if (
+                self.coordinator.pre_boost_hvac_mode == HVACMode.HEAT
+                and self.coordinator.pre_boost_occupied_heating_setpoint_heat
+                is not None
+            ):
+                await self.coordinator.async_set_hvac_mode_heat(
+                    self.coordinator.pre_boost_occupied_heating_setpoint_heat,
+                )
+            else:
+                await self.async_set_hvac_mode(self.coordinator.pre_boost_hvac_mode)
+            self.coordinator.pre_boost_hvac_mode = None
+            self.coordinator.pre_boost_occupied_heating_setpoint_heat = None
+
+        # Write updated temperature to HA state to avoid flapping (MQTT confirmation is slow)
+        self.async_write_ha_state()
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Set the target temperature."""
+        """Set the target temperature."""
+        if temperature := kwargs.get(ATTR_TEMPERATURE):
+            self._attr_target_temperature = temperature
+
+        if hvac_mode := kwargs.get(ATTR_HVAC_MODE):
+            self._hvac_mode_set_from_temperature = True
+            await self.async_set_hvac_mode(hvac_mode)
+            return
+
+        if temperature:
+            await self.coordinator.async_set_temperature(temperature)
+
+        # Write updated temperature to HA state to avoid flapping (MQTT confirmation is slow)
+        self.async_write_ha_state()
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set the hvac mode."""
+
+        if hvac_mode in self._attr_hvac_modes:
+            self._attr_hvac_mode = hvac_mode
+        else:
+            LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
+            return
+
+        if hvac_mode == HVACMode.AUTO:
+            await self.coordinator.async_set_hvac_mode_auto()
+        if hvac_mode == HVACMode.HEAT:
+            if self._hvac_mode_set_from_temperature:
+                assert self._attr_target_temperature is not None
+                await self.coordinator.async_set_hvac_mode_heat(
+                    self._attr_target_temperature, self._hvac_mode_set_from_temperature
+                )
+
+                self._hvac_mode_set_from_temperature = False
+                self.async_write_ha_state()
+                return
+
+            if self.coordinator.pre_boost_occupied_heating_setpoint_heat:
+                await self.coordinator.async_set_hvac_mode_heat(
+                    self.coordinator.pre_boost_occupied_heating_setpoint_heat,
+                    self._hvac_mode_set_from_temperature,
+                )
+            else:
+                if self._attr_current_temperature:
+                    # Get the current temperature and round down to nearest .5
+                    self._attr_target_temperature = (
+                        floor((self._attr_current_temperature) * 2) / 2
+                    )
+                assert self._attr_target_temperature is not None
+                await self.coordinator.async_set_hvac_mode_heat(
+                    self._attr_target_temperature, self._hvac_mode_set_from_temperature
+                )
+
+        if hvac_mode == HVACMode.OFF:
+            await self.coordinator.async_set_hvac_mode_off()
+
+        self._hvac_mode_set_from_temperature = False
+
+        # Write updated temperature to HA state to avoid flapping (MQTT confirmation is slow)
+        self.async_write_ha_state()
+
+    async def async_turn_on(self) -> None:
+        """Set the HVAC State to on."""
+        assert self._attr_target_temperature is not None
+        await self.coordinator.async_set_hvac_mode_heat(self._attr_target_temperature)
+
+    async def async_turn_off(self) -> None:
+        """Set the HVAC State to off."""
+        await self.coordinator.async_set_hvac_mode_off()
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+
+        self._attr_current_temperature = self.coordinator.current_temperature
+        self._attr_target_temperature = self.coordinator.target_temperature
+        self._attr_preset_mode = self.coordinator.preset_mode
+        self._attr_hvac_action = self.coordinator.hvac_action
+        self._attr_hvac_mode = self.coordinator.hvac_mode
+
+        # Update HA state
+        self.async_write_ha_state()

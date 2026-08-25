@@ -1,248 +1,140 @@
-"""Hive Local v5 — fully local Hive heating control via Zigbee2MQTT."""
+"""Custom integration to integrate hive_local with Home Assistant.
+
+For more details about this integration, please refer to
+https://github.com/andrew-codechimp/HA_Hive_Local_Thermostat
+"""
+
 from __future__ import annotations
 
-import logging
-from typing import Any
+from asyncio import sleep
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from awesomeversion.awesomeversion import AwesomeVersion
+
+from homeassistant.components.mqtt import client as mqtt_client
+from homeassistant.const import (
+    Platform,
+    __version__ as HA_VERSION,  # noqa: N812
+)
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
+from .common import HiveConfigEntry, HiveData
 from .const import (
-    ATTR_DURATION_MINUTES, ATTR_SCHEDULE, ATTR_TEMPERATURE,
-    CONF_BOILER_ENTITY, CONF_ENABLE_DIAG,
-    CONF_FROST_ENABLED, CONF_FROST_TEMP, CONF_FROST_WEATHER,
-    CONF_Z2M_BASE_TOPIC, DATA_COORDINATOR, DATA_STORE,
-    DEFAULT_BOOST_MINUTES, DEFAULT_BOOST_TEMP, DOMAIN, PLATFORMS,
-    SVC_DEVICE_BOOST, SVC_DEVICE_END_BOOST,
-    SVC_ROOM_BOOST, SVC_ROOM_CLEAR_SCHEDULE,
-    SVC_ROOM_END_BOOST, SVC_ROOM_SET_SCHEDULE,
+    CONF_BOILER_SWITCH,
+    CONF_MODEL,
+    CONF_MQTT_TOPIC,
+    CONF_Z2M_SWITCH_TOPIC,
+    CONF_SHOW_HEAT_SCHEDULE_MODE,
+    CONF_SHOW_WATER_SCHEDULE_MODE,
+    DOMAIN,
+    LOGGER,
+    MIN_HA_VERSION,
+    MODEL_SLR2,
 )
-from .coordinator import HiveLocalCoordinator
-from .store import HiveLocalStore
+from .coordinator import BoilerSwitchCoordinator, HiveCoordinator
+from .services import async_setup_services
 
-_LOGGER = logging.getLogger(__name__)
+PLATFORMS_SLR1: list[Platform] = [
+    Platform.SENSOR,
+    Platform.CLIMATE,
+    Platform.NUMBER,
+    Platform.BUTTON,
+    Platform.BINARY_SENSOR,
+]
+
+PLATFORMS_SLR2: list[Platform] = [
+    Platform.SENSOR,
+    Platform.CLIMATE,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.BUTTON,
+    Platform.BINARY_SENSOR,
+]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register Lovelace cards."""
-    from pathlib import Path
-    from homeassistant.components.frontend import add_extra_js_url
-    from homeassistant.components.http import StaticPathConfig
+def get_platforms(model: str) -> list[Platform]:
+    """Return platforms for model."""
+    return PLATFORMS_SLR2 if model == MODEL_SLR2 else PLATFORMS_SLR1
 
-    for card in ("hive-local-device-card.js", "hive-local-room-card.js", "hive-local-panel-card.js", "hive-local-dashboard-card.js"):
-        path = Path(__file__).parent / card
-        if path.exists():
-            url = f"/{DOMAIN}/{card}"
-            await hass.http.async_register_static_paths(
-                [StaticPathConfig(url, str(path), True)]
-            )
-            add_extra_js_url(hass, url)
-            _LOGGER.debug("Registered card: %s", url)
+
+async def async_setup(
+    hass: HomeAssistant,
+    config: ConfigType,  # noqa: ARG001
+) -> bool:
+    """Integration setup."""
+
+    if AwesomeVersion(HA_VERSION) < AwesomeVersion(MIN_HA_VERSION):  # pragma: no cover
+        msg = (
+            "This integration requires at least Home Assistant version "
+            f" {MIN_HA_VERSION}, you are running version {HA_VERSION}."
+            " Please upgrade Home Assistant to continue using this integration."
+        )
+        LOGGER.critical(msg)
+        return False
+
+    async_setup_services(hass)
+
     return True
 
 
-DASHBOARD_URL_PATH = "hive-local"
-DASHBOARD_CONFIG = """title: Hive
-views:
-  - title: Hive Heating
-    path: hive
-    icon: mdi:radiator
-    type: sections
-    sections:
-      - type: grid
-        columns: 1
-        cards:
-          - type: custom:hive-local-dashboard-card
-"""
+async def async_setup_entry(hass: HomeAssistant, entry: HiveConfigEntry) -> bool:
+    """Set up this integration using UI."""
 
-
-async def _ensure_dashboard(hass: HomeAssistant) -> None:
-    """Create the Hive sidebar dashboard if it doesn't already exist."""
-    try:
-        from homeassistant.components.lovelace import dashboard as ll_dashboard
-        dashboards = hass.data.get("lovelace", {})
-
-        # Check if our dashboard already exists
-        existing = dashboards.get("dashboards", {})
-        if DASHBOARD_URL_PATH in existing:
-            return
-
-        # Create via websocket API equivalent — store directly
-        config_store = hass.config.config_dir
-        import os, yaml as _yaml
-        dash_path = os.path.join(config_store, f"dashboards/{DASHBOARD_URL_PATH}.yaml")
-        os.makedirs(os.path.dirname(dash_path), exist_ok=True)
-        if not os.path.exists(dash_path):
-            with open(dash_path, "w") as f:
-                f.write(DASHBOARD_CONFIG)
-
-        # Register the dashboard entry in lovelace storage
-        ll_data = hass.data.get("lovelace")
-        if ll_data and hasattr(ll_data, "async_create_item"):
-            await ll_data.async_create_item({
-                "url_path":        DASHBOARD_URL_PATH,
-                "title":           "Hive",
-                "icon":            "mdi:radiator",
-                "show_in_sidebar": True,
-                "require_admin":   False,
-                "filename":        f"dashboards/{DASHBOARD_URL_PATH}.yaml",
-                "mode":            "yaml",
-            })
-            _LOGGER.info("Hive Local: created Hive sidebar dashboard")
-    except Exception as exc:
-        _LOGGER.debug("Hive Local: dashboard auto-create skipped: %s", exc)
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    opts   = entry.options or {}
-    data   = entry.data    or {}
-    merged = {**data, **opts}
-
-    store = HiveLocalStore(hass, entry.entry_id)
-    await store.async_load()
-
-    coordinator = HiveLocalCoordinator(
-        hass          = hass,
-        entry_id      = entry.entry_id,
-        store         = store,
-        boiler_entity = merged.get(CONF_BOILER_ENTITY),
+    coordinator = HiveCoordinator(
+        hass,
+        entry.entry_id,
+        entry.options[CONF_MODEL],
+        entry.options[CONF_MQTT_TOPIC],
+        entry.options.get(CONF_SHOW_HEAT_SCHEDULE_MODE, True),
+        entry.options.get(CONF_SHOW_WATER_SCHEDULE_MODE, True),
     )
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        DATA_COORDINATOR: coordinator,
-        DATA_STORE:       store,
-    }
+    platforms = get_platforms(coordinator.model)
 
-    await coordinator.async_setup()
+    entry.runtime_data = HiveData(
+        platforms=platforms,
+        coordinator=coordinator,
+    )
 
-    # Apply global frost protection settings if configured
-    if merged.get(CONF_FROST_ENABLED) and merged.get(CONF_FROST_WEATHER):
-        coordinator.update_frost_protection(
-            enabled        = True,
-            threshold      = float(merged.get(CONF_FROST_TEMP, 2.0)),
-            weather_entity = merged.get(CONF_FROST_WEATHER),
+    await hass.config_entries.async_forward_entry_setups(entry, platforms)
+
+    LOGGER.debug(
+        "Subscribing to MQTT topic: %s, will parse platforms for %s",
+        coordinator.topic,
+        coordinator.model,
+    )
+
+    # Subscribe to MQTT and have the coordinator handle messages
+    entry.async_on_unload(
+        await mqtt_client.async_subscribe(
+            hass, coordinator.topic, coordinator.handle_mqtt_message, 1
         )
+    )
 
-    # Start Z2M bridge device auto-discovery
-    from .discovery import HiveDiscovery
-    base_topic = merged.get(CONF_Z2M_BASE_TOPIC, "zigbee2mqtt")
-    discovery  = HiveDiscovery(hass, coordinator, base_topic)
-    await discovery.async_setup()
-    hass.data[DOMAIN][entry.entry_id]["discovery"] = discovery
+    # Send an initial message to get the current state
+    await sleep(2)
+    payload = r'{"system_mode":""}'
+    LOGGER.debug("Sending to %s/get message %s", coordinator.topic, payload)
+    await mqtt_client.async_publish(hass, coordinator.topic_get, payload)
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
 
-    # Re-apply entity suppression for rooms that existed before this boot
-    coordinator.restore_entity_suppression()
-
-    _register_services(hass, coordinator)
-
-    entry.async_on_unload(entry.add_update_listener(_on_options_updated))
-    _LOGGER.info("Hive Local v5 ready")
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if ok:
-        ed = hass.data[DOMAIN].pop(entry.entry_id, {})
-        if disc := ed.get("discovery"):
-            await disc.async_unload()
-        c: HiveLocalCoordinator | None = ed.get(DATA_COORDINATOR)
-        if c:
-            await c.async_unload()
-    return ok
+async def async_unload_entry(hass: HomeAssistant, entry: HiveConfigEntry) -> bool:
+    """Handle removal of an entry."""
+    return await hass.config_entries.async_unload_platforms(
+        entry, entry.runtime_data.platforms
+    )
 
 
-async def _on_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload only if Z2M topic changed; boiler entity is updated live."""
-    old = entry.data.get(CONF_Z2M_BASE_TOPIC)
-    new = (entry.options or {}).get(CONF_Z2M_BASE_TOPIC)
-    if old != new:
-        _LOGGER.info("Z2M base topic changed — reloading")
-        await hass.config_entries.async_reload(entry.entry_id)
+async def config_entry_update_listener(
+    hass: HomeAssistant, entry: HiveConfigEntry
+) -> None:
+    """Update listener, called when the config entry options are changed."""
 
-
-def _coordinator(hass: HomeAssistant) -> HiveLocalCoordinator | None:
-    for ed in hass.data.get(DOMAIN, {}).values():
-        c = ed.get(DATA_COORDINATOR)
-        if c:
-            return c
-    return None
-
-
-def _room_for_entity(hass: HomeAssistant, entity_id: str):
-    """Resolve a room climate entity_id to its HiveRoom."""
-    from homeassistant.helpers import entity_registry as er
-    from .const import uid_room
-    ent_reg = er.async_get(hass)
-    entry   = ent_reg.async_get(entity_id)
-    if not entry:
-        return None
-    uid = entry.unique_id or ""
-    # uid format: hive_local_room_{room_id}_climate
-    prefix = f"{DOMAIN}_room_"
-    suffix = "_climate"
-    if uid.startswith(prefix) and uid.endswith(suffix):
-        room_id = uid[len(prefix):-len(suffix)]
-        c = _coordinator(hass)
-        return c.get_room(room_id) if c else None
-    return None
-
-
-def _register_services(hass: HomeAssistant, coordinator: HiveLocalCoordinator) -> None:
-    import voluptuous as vol
-
-    if hass.services.has_service(DOMAIN, SVC_ROOM_BOOST):
-        return
-
-    async def room_boost(call: ServiceCall) -> None:
-        room = _room_for_entity(hass, call.data["entity_id"])
-        if room:
-            await room.async_start_boost(
-                call.data.get(ATTR_TEMPERATURE),
-                call.data.get(ATTR_DURATION_MINUTES),
-            )
-
-    async def room_end_boost(call: ServiceCall) -> None:
-        room = _room_for_entity(hass, call.data["entity_id"])
-        if room:
-            await room.async_end_boost()
-
-    async def room_set_schedule(call: ServiceCall) -> None:
-        room = _room_for_entity(hass, call.data["entity_id"])
-        if room:
-            schedule = call.data[ATTR_SCHEDULE]
-            await room.async_set_schedule(schedule)
-            c = _coordinator(hass)
-            if c:
-                await c.store.async_set_room_schedule(room.room_id, schedule)
-
-    async def room_clear_schedule(call: ServiceCall) -> None:
-        room = _room_for_entity(hass, call.data["entity_id"])
-        if room:
-            room.clear_schedule()
-
-    _EID = vol.Schema({vol.Required("entity_id"): str})
-    _BOOST = vol.Schema({
-        vol.Required("entity_id"):  str,
-        vol.Optional(ATTR_TEMPERATURE,      default=DEFAULT_BOOST_TEMP):    vol.Coerce(float),
-        vol.Optional(ATTR_DURATION_MINUTES, default=DEFAULT_BOOST_MINUTES): vol.All(int, vol.Range(min=1, max=360)),
-    })
-    _SCHED = vol.Schema({
-        vol.Required("entity_id"): str,
-        vol.Required(ATTR_SCHEDULE): [vol.Schema({
-            vol.Required("days"):        [vol.All(int, vol.Range(min=0, max=6))],
-            vol.Required("time"):        str,
-            vol.Required("temperature"): vol.Coerce(float),
-        })],
-    })
-
-    hass.services.async_register(DOMAIN, SVC_ROOM_BOOST,          room_boost,          _BOOST)
-    hass.services.async_register(DOMAIN, SVC_ROOM_END_BOOST,       room_end_boost,      _EID)
-    hass.services.async_register(DOMAIN, SVC_ROOM_SET_SCHEDULE,    room_set_schedule,   _SCHED)
-    hass.services.async_register(DOMAIN, SVC_ROOM_CLEAR_SCHEDULE,  room_clear_schedule, _EID)
+    await hass.config_entries.async_reload(entry.entry_id)
