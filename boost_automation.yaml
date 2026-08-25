@@ -1,0 +1,171 @@
+# Heating Boost
+# One automation handles boost for all rooms via input helpers
+# Requires the following helpers (create in Settings → Helpers):
+#
+# input_number.heating_boost_duration
+#   Name: Boost duration
+#   Min: 10, Max: 120, Step: 10, Unit: min, Icon: mdi:timer
+#
+# input_number.heating_boost_temperature  
+#   Name: Boost temperature
+#   Min: 16, Max: 28, Step: 0.5, Unit: °C, Icon: mdi:thermometer
+#
+# input_select.heating_boost_room
+#   Name: Boost room
+#   Options: Living Room, Bedroom, Kitchen, Office, Hallway, Entrance,
+#             Guest Room, Conservatory, Garage, All Rooms
+
+alias: Heating — Apply boost
+description: Boosts selected room(s) to set temperature for set duration.
+mode: restart
+trigger:
+  - platform: state
+    entity_id: input_boolean.heating_boost_active
+    to: "on"
+variables:
+  room: "{{ states('input_select.heating_boost_room') }}"
+  duration: "{{ states('input_number.heating_boost_duration') | int }}"
+  temperature: "{{ states('input_number.heating_boost_temperature') | float }}"
+  room_map:
+    Living Room:
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
+    Bedroom:
+      - climate.hive_trv_bedroom
+    Kitchen:
+      - climate.hive_trv_kitchen
+    Office:
+      - climate.hive_trv_office
+    Hallway:
+      - climate.hive_trv_hallway
+    Entrance:
+      - climate.hive_trv_entrance
+    Guest Room:
+      - climate.hive_trv_guestroom
+    Conservatory:
+      - climate.hive_trv_conservatory
+    Garage:
+      - climate.hive_trv_garage
+    All Rooms:
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
+      - climate.hive_trv_bedroom
+      - climate.hive_trv_kitchen
+      - climate.hive_trv_office
+      - climate.hive_trv_hallway
+      - climate.hive_trv_entrance
+      - climate.hive_trv_guestroom
+      - climate.hive_trv_conservatory
+      - climate.hive_trv_garage
+action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        Boost started — {{ room }}, {{ temperature }}°C for {{ duration }} minutes
+      entity_id: switch.boiler_switch
+
+  # Set all target TRVs to boost mode
+  - repeat:
+      for_each: "{{ room_map[room] }}"
+      sequence:
+        - service: climate.set_temperature
+          target:
+            entity_id: "{{ repeat.item }}"
+          data:
+            temperature: "{{ temperature }}"
+        - service: mqtt.publish
+          data:
+            topic: >
+              zigbee2mqtt/{{ state_attr(repeat.item, 'friendly_name') }}/set
+            payload: >
+              {"system_mode":"heat","temperature_setpoint_hold":1,
+               "temperature_setpoint_hold_duration":{{ duration }}}
+
+  # Wait for boost duration then cancel
+  - delay:
+      minutes: "{{ duration }}"
+
+  # Cancel boost — return to previous mode
+  - repeat:
+      for_each: "{{ room_map[room] }}"
+      sequence:
+        - service: mqtt.publish
+          data:
+            topic: >
+              zigbee2mqtt/{{ state_attr(repeat.item, 'friendly_name') }}/set
+            payload: >
+              {"temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}
+
+  - service: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.heating_boost_active
+
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: "Boost ended — {{ room }}"
+      entity_id: switch.boiler_switch
+
+---
+
+alias: Heating — Cancel boost
+description: Cancels active boost immediately and returns TRVs to normal mode.
+mode: single
+trigger:
+  - platform: state
+    entity_id: input_boolean.heating_boost_active
+    to: "off"
+variables:
+  room: "{{ states('input_select.heating_boost_room') }}"
+  room_map:
+    Living Room:
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
+    Bedroom:
+      - climate.hive_trv_bedroom
+    Kitchen:
+      - climate.hive_trv_kitchen
+    Office:
+      - climate.hive_trv_office
+    Hallway:
+      - climate.hive_trv_hallway
+    Entrance:
+      - climate.hive_trv_entrance
+    Guest Room:
+      - climate.hive_trv_guestroom
+    Conservatory:
+      - climate.hive_trv_conservatory
+    Garage:
+      - climate.hive_trv_garage
+    All Rooms:
+      - climate.hive_trv_tv
+      - climate.hive_trv_bay
+      - climate.hive_trv_dining
+      - climate.hive_trv_bedroom
+      - climate.hive_trv_kitchen
+      - climate.hive_trv_office
+      - climate.hive_trv_hallway
+      - climate.hive_trv_entrance
+      - climate.hive_trv_guestroom
+      - climate.hive_trv_conservatory
+      - climate.hive_trv_garage
+action:
+  - repeat:
+      for_each: "{{ room_map[room] }}"
+      sequence:
+        - service: mqtt.publish
+          data:
+            topic: >
+              zigbee2mqtt/{{ state_attr(repeat.item, 'friendly_name') }}/set
+            payload: >
+              {"temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}
+
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: "Boost cancelled — {{ room }}"
+      entity_id: switch.boiler_switch

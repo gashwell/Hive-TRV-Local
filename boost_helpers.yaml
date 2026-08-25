@@ -1,0 +1,59 @@
+# Boost helpers — add to configuration.yaml or create via Settings → Helpers
+#
+# input_boolean: heating_boost_active
+#   Name: Heating boost active
+#   Icon: mdi:fire
+#
+# input_number: heating_boost_duration
+#   Name: Boost duration
+#   Min: 10, Max: 120, Step: 10, Unit: min
+#
+# input_number: heating_boost_temperature
+#   Name: Boost temperature  
+#   Min: 16, Max: 28, Step: 0.5, Unit: °C
+#
+# input_select: heating_boost_room
+#   Name: Boost room
+#   Options: Living Room, Bedroom, Kitchen, Office, Hallway,
+#             Entrance, Guest Room, Conservatory, Garage, All Rooms
+
+input_boolean:
+  heating_boost_active:
+    name: Heating boost active
+    icon: mdi:fire
+
+input_number:
+  heating_boost_duration:
+    name: Boost duration
+    min: 10
+    max: 120
+    step: 10
+    unit_of_measurement: min
+    icon: mdi:timer
+    initial: 60
+
+  heating_boost_temperature:
+    name: Boost temperature
+    min: 16
+    max: 28
+    step: 0.5
+    unit_of_measurement: °C
+    icon: mdi:thermometer
+    initial: 22
+
+input_select:
+  heating_boost_room:
+    name: Boost room
+    options:
+      - Living Room
+      - Bedroom
+      - Kitchen
+      - Office
+      - Hallway
+      - Entrance
+      - Guest Room
+      - Conservatory
+      - Garage
+      - All Rooms
+    initial: Living Room
+    icon: mdi:home-thermometer

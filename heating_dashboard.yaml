@@ -147,6 +147,64 @@ views:
                       action: more-info
                       entity: climate.hive_trv_dining
 
+      # Boost panel
+      - type: grid
+        columns: 1
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-template-card
+                primary: >
+                  {{ 'Boost active — ' + states('input_select.heating_boost_room')
+                     if is_state('input_boolean.heating_boost_active', 'on')
+                     else 'Boost' }}
+                secondary: >
+                  {% if is_state('input_boolean.heating_boost_active', 'on') %}
+                    {{ states('input_number.heating_boost_temperature') | float | round(1) }}°C
+                  {% else %}
+                    Select room, temperature and duration
+                  {% endif %}
+                icon: mdi:fire
+                icon_color: >
+                  {{ 'orange' if is_state('input_boolean.heating_boost_active', 'on') else 'grey' }}
+                badge_icon: >
+                  {{ 'mdi:check-circle' if is_state('input_boolean.heating_boost_active', 'on') else '' }}
+                badge_color: orange
+              - type: entities
+                entities:
+                  - entity: input_select.heating_boost_room
+                    name: Room
+                  - entity: input_number.heating_boost_temperature
+                    name: Boost temperature
+                  - entity: input_number.heating_boost_duration
+                    name: Duration (minutes)
+              - type: horizontal-stack
+                cards:
+                  - type: custom:mushroom-template-card
+                    primary: Start boost
+                    icon: mdi:fire
+                    icon_color: orange
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_on
+                      service_data:
+                        entity_id: input_boolean.heating_boost_active
+                    card_mod:
+                      style: |
+                        :host {
+                          --ha-card-background: rgba(232, 99, 42, 0.1);
+                          border: 0.5px solid rgba(232, 99, 42, 0.5);
+                        }
+                  - type: custom:mushroom-template-card
+                    primary: Cancel boost
+                    icon: mdi:fire-off
+                    icon_color: grey
+                    tap_action:
+                      action: call-service
+                      service: input_boolean.turn_off
+                      service_data:
+                        entity_id: input_boolean.heating_boost_active
+
       # Individual rooms — flame badge shows when heating
       - type: grid
         columns: 2
