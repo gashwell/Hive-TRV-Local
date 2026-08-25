@@ -3,17 +3,11 @@
     "binary_sensor": {
       "heat_boost": {
         "default": "mdi:rocket-launch"
-      },
-      "water_boost": {
-        "default": "mdi:rocket-launch"
       }
     },
     "button": {
       "boost_heating": {
         "default": "mdi:radiator"
-      },
-      "boost_water": {
-        "default": "mdi:water-boiler"
       }
     },
     "number": {
@@ -25,21 +19,11 @@
       },
       "heating_frost_prevention": {
         "default": "mdi:snowflake-thermometer"
-      },
-      "water_boost_duration": {
-        "default": "mdi:timer"
       }
     },
-    "select": {
-      "system_mode_water": {
-        "default": "mdi:water-boiler"
-      }
-    },
+    "select": {},
     "sensor": {
       "boost_remaining_heat": {
-        "default": "mdi:timer-outline"
-      },
-      "boost_remaining_water": {
         "default": "mdi:timer-outline"
       },
       "local_temperature_heat": {
@@ -53,14 +37,6 @@
           "off": "mdi:radiator-off",
           "preheating": "mdi:radiator"
         }
-      },
-      "running_state_water": {
-        "default": "mdi:water-boiler-off",
-        "state": {
-          "heat": "mdi:water-boiler",
-          "idle": "mdi:water-boiler-off",
-          "off": "mdi:water-boiler-off"
-        }
       }
     }
   },
@@ -68,13 +44,7 @@
     "boost_heating": {
       "service": "mdi:rocket-launch"
     },
-    "boost_water": {
-      "service": "mdi:rocket-launch"
-    },
     "cancel_boost_heating": {
-      "service": "mdi:cancel"
-    },
-    "cancel_boost_water": {
       "service": "mdi:cancel"
     }
   }

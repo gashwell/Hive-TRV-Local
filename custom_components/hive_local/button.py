@@ -11,7 +11,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .common import HiveConfigEntry
 from .const import (
     DOMAIN,
-    MODEL_SLR2,
 )
 from .coordinator import HiveCoordinator
 from .entity import HiveEntity, HiveEntityDescription
@@ -41,15 +40,6 @@ async def async_setup_entry(
             name=config_entry.title,
         ),
     ]
-
-    if coordinator.model == MODEL_SLR2:
-        entity_descriptions.append(
-            HiveButtonEntityDescription(
-                key="boost_water",
-                translation_key="boost_water",
-                name=config_entry.title,
-            )
-        )
 
     _entities = [
         HiveButton(
@@ -84,7 +74,5 @@ class HiveButton(HiveEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Press the button."""
-        if self.entity_description.key == "boost_water":
-            await self.coordinator.async_water_boost()
-        elif self.entity_description.key == "boost_heating":
+        if self.entity_description.key == "boost_heating":
             await self.coordinator.async_heating_boost()

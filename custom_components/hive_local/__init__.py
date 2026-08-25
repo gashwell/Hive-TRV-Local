@@ -21,18 +21,15 @@ from homeassistant.helpers.typing import ConfigType
 
 from .common import HiveConfigEntry, HiveData
 from .const import (
-    CONF_BOILER_SWITCH,
     CONF_MODEL,
     CONF_MQTT_TOPIC,
-    CONF_Z2M_SWITCH_TOPIC,
     CONF_SHOW_HEAT_SCHEDULE_MODE,
     CONF_SHOW_WATER_SCHEDULE_MODE,
     DOMAIN,
     LOGGER,
     MIN_HA_VERSION,
-    MODEL_SLR2,
 )
-from .coordinator import BoilerSwitchCoordinator, HiveCoordinator
+from .coordinator import HiveCoordinator
 from .services import async_setup_services
 
 PLATFORMS_SLR1: list[Platform] = [
@@ -43,21 +40,12 @@ PLATFORMS_SLR1: list[Platform] = [
     Platform.BINARY_SENSOR,
 ]
 
-PLATFORMS_SLR2: list[Platform] = [
-    Platform.SENSOR,
-    Platform.CLIMATE,
-    Platform.NUMBER,
-    Platform.SELECT,
-    Platform.BUTTON,
-    Platform.BINARY_SENSOR,
-]
-
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 def get_platforms(model: str) -> list[Platform]:
     """Return platforms for model."""
-    return PLATFORMS_SLR2 if model == MODEL_SLR2 else PLATFORMS_SLR1
+    return PLATFORMS_SLR1
 
 
 async def async_setup(

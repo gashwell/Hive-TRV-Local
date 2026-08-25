@@ -80,7 +80,6 @@ class HiveCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         model: str,
         topic: str,
         show_heat_schedule_mode: bool,
-        show_water_schedule_mode: bool,
     ) -> None:
         """Initialise the TRV coordinator."""
         super().__init__(hass, LOGGER, name=f"{DOMAIN}_{entry_id}")

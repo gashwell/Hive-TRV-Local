@@ -14,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .common import HiveConfigEntry
 from .const import (
     DOMAIN,
-    MODEL_SLR2,
 )
 from .coordinator import HiveCoordinator
 from .entity import HiveEntity, HiveEntityDescription
@@ -39,30 +38,14 @@ async def async_setup_entry(
 
     coordinator = config_entry.runtime_data.coordinator
 
-    if coordinator.model == MODEL_SLR2:
-        entity_descriptions = [
-            HiveBinarySensorEntityDescription(
-                key="heat_boost",
-                translation_key="heat_boost",
-                name=config_entry.title,
-                running_state=True,
-            ),
-            HiveBinarySensorEntityDescription(
-                key="water_boost",
-                translation_key="water_boost",
-                name=config_entry.title,
-                running_state=True,
-            ),
-        ]
-    else:
-        entity_descriptions = [
-            HiveBinarySensorEntityDescription(
-                key="heat_boost",
-                translation_key="heat_boost",
-                name=config_entry.title,
-                running_state=True,
-            ),
-        ]
+    entity_descriptions = [
+        HiveBinarySensorEntityDescription(
+            key="heat_boost",
+            translation_key="heat_boost",
+            name=config_entry.title,
+            running_state=True,
+        ),
+    ]
 
     _entities = [
         HiveBinarySensor(

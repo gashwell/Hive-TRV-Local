@@ -21,7 +21,6 @@ from homeassistant.helpers.temperature import display_temp as show_temp
 from .common import HiveConfigEntry
 from .const import (
     DOMAIN,
-    MODEL_SLR2,
 )
 from .coordinator import HiveCoordinator
 from .entity import HiveEntity, HiveEntityDescription
@@ -46,59 +45,27 @@ async def async_setup_entry(
 
     coordinator = config_entry.runtime_data.coordinator
 
-    if coordinator.model == MODEL_SLR2:
-        entity_descriptions = [
-            HiveSensorEntityDescription(
-                key="running_state_heat",
-                translation_key="running_state_heat",
-                name=config_entry.title,
-            ),
-            HiveSensorEntityDescription(
-                key="local_temperature_heat",
-                translation_key="local_temperature_heat",
-                name=config_entry.title,
-                device_class=SensorDeviceClass.TEMPERATURE,
-                native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-                suggested_display_precision=1,
-            ),
-            HiveSensorEntityDescription(
-                key="running_state_water",
-                translation_key="running_state_water",
-                name=config_entry.title,
-            ),
-            HiveSensorEntityDescription(
-                key="boost_remaining_heat",
-                translation_key="boost_remaining_heat",
-                name=config_entry.title,
-            ),
-            HiveSensorEntityDescription(
-                key="boost_remaining_water",
-                translation_key="boost_remaining_water",
-                name=config_entry.title,
-            ),
-        ]
-    else:
-        entity_descriptions = [
-            HiveSensorEntityDescription(
-                key="running_state_heat",
-                translation_key="running_state_heat",
-                name=config_entry.title,
-            ),
-            HiveSensorEntityDescription(
-                key="local_temperature_heat",
-                translation_key="local_temperature_heat",
-                name=config_entry.title,
-                device_class=SensorDeviceClass.TEMPERATURE,
-                native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-                suggested_display_precision=1,
-            ),
-            HiveSensorEntityDescription(
-                key="boost_remaining_heat",
-                translation_key="boost_remaining_heat",
-                name=config_entry.title,
-                suggested_display_precision=1,
-            ),
-        ]
+    entity_descriptions = [
+        HiveSensorEntityDescription(
+            key="running_state_heat",
+            translation_key="running_state_heat",
+            name=config_entry.title,
+        ),
+        HiveSensorEntityDescription(
+            key="local_temperature_heat",
+            translation_key="local_temperature_heat",
+            name=config_entry.title,
+            device_class=SensorDeviceClass.TEMPERATURE,
+            native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+            suggested_display_precision=1,
+        ),
+        HiveSensorEntityDescription(
+            key="boost_remaining_heat",
+            translation_key="boost_remaining_heat",
+            name=config_entry.title,
+            suggested_display_precision=1,
+        ),
+    ]
 
     _entities = [
         HiveSensor(

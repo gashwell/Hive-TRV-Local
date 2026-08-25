@@ -66,7 +66,6 @@ async def general_options_schema(
                 selector.BooleanSelectorConfig(),
             ),
             required(
-                const.CONF_SHOW_WATER_SCHEDULE_MODE, handler.options, default=True
             ): selector.BooleanSelector(
                 selector.BooleanSelectorConfig(),
             ),
@@ -95,7 +94,6 @@ async def general_config_schema(
                 selector.BooleanSelectorConfig(),
             ),
             required(
-                const.CONF_SHOW_WATER_SCHEDULE_MODE, handler.options, default=True
             ): selector.BooleanSelector(
                 selector.BooleanSelectorConfig(),
             ),

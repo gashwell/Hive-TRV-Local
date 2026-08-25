@@ -25,11 +25,9 @@ from .const import (
     DEFAULT_FROST_TEMPERATURE,
     DEFAULT_HEATING_BOOST_MINUTES,
     DEFAULT_HEATING_BOOST_TEMPERATURE,
-    DEFAULT_WATER_BOOST_MINUTES,
     DOMAIN,
     LOGGER,
     MAXIMUM_BOOST_MINUTES,
-    MODEL_SLR2,
 )
 from .coordinator import HiveCoordinator
 from .entity import HiveEntity, HiveEntityDescription
@@ -90,20 +88,6 @@ async def async_setup_entry(
             default_value=DEFAULT_HEATING_BOOST_TEMPERATURE,
         ),
     ]
-
-    if coordinator.model == MODEL_SLR2:
-        entity_descriptions.append(
-            HiveNumberEntityDescription(
-                key="water_boost_duration",
-                translation_key="water_boost_duration",
-                name=config_entry.title,
-                entity_category=EntityCategory.CONFIG,
-                native_min_value=15,
-                native_max_value=MAXIMUM_BOOST_MINUTES,
-                native_step=1,
-                default_value=DEFAULT_WATER_BOOST_MINUTES,
-            )
-        )
 
     _entities = [
         HiveNumber(

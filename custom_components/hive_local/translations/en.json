@@ -1,193 +1,134 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "Hive Local Thermostat",
-                "description": "Enter the entity name and configure parameters.",
-                "data": {
-                    "name": "Friendly name",
-                    "mqtt_topic": "MQTT topic",
-                    "model": "Model",
-                    "show_heat_schedule_mode": "Show heat schedule mode",
-                    "show_water_schedule_mode": "Show water schedule mode"
-                },
-                "data_description": {
-                    "mqtt_topic": "Must be exact case, e.g. zigbee2mqtt/HiveReceiver",
-                    "show_heat_schedule_mode": "Enable if you want to have the option to use the Hive thermostat built in schedules for heating, shows as Auto in the climate control.",
-                    "show_water_schedule_mode": "Enable if you want to have the option to use the Hive thermostat built in schedules for water, ignore if your model does not support water."
-                }
-            }
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hive Local Thermostat",
+        "description": "Enter the entity name and configure parameters.",
+        "data": {
+          "name": "Friendly name",
+          "mqtt_topic": "MQTT topic",
+          "model": "Model",
+          "show_heat_schedule_mode": "Show heat schedule mode"
+        },
+        "data_description": {
+          "mqtt_topic": "Must be exact case, e.g. zigbee2mqtt/HiveReceiver",
+          "show_heat_schedule_mode": "Enable if you want to have the option to use the Hive thermostat built in schedules for heating, shows as Auto in the climate control."
         }
-    },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Hive Local Thermostat",
-                "description": "Enter the entity name and configure parameters.",
-                "data": {
-                    "mqtt_topic": "MQTT topic",
-                    "model": "Model",
-                    "show_heat_schedule_mode": "Show heat schedule mode",
-                    "show_water_schedule_mode": "Show water schedule mode"
-                },
-                "data_description": {
-                    "mqtt_topic": "Must be exact case, e.g. zigbee2mqtt/HiveReceiver",
-                    "show_heat_schedule_mode": "Enable if you want to have the option to use the Hive thermostat built in schedules for heating, shows as Auto in the climate control.",
-                    "show_water_schedule_mode": "Enable if you want to have the option to use the Hive thermostat built in schedules for water, ignore if your model does not support water."
-                }
-            }
-        }
-    },
-    "selector": {
-        "model": {
-            "options": {
-                "otr1": "OTR1",
-                "slr1": "SLR1",
-                "slr2": "SLR2"
-            }
-        }
-    },
-    "entity": {
-        "binary_sensor": {
-            "heat_boost": {
-                "name": "Heating boost"
-            },
-            "water_boost": {
-                "name": "Water boost"
-            }
-        },
-        "sensor": {
-            "local_temperature_heat": {
-                "name": "Current temperature"
-            },
-            "running_state_water": {
-                "name": "Running state water",
-                "state": {
-                    "off": "Off",
-                    "idle": "Idle",
-                    "heat": "Heating"
-                }
-            },
-            "running_state_heat": {
-                "name": "Running state heat",
-                "state": {
-                    "off": "Off",
-                    "idle": "Idle",
-                    "heat": "Heating",
-                    "preheating": "Preheating"
-                }
-            },
-            "boost_remaining_heat": {
-                "name": "Heating boost remaining",
-                "unit_of_measurement": "minutes"
-            },
-            "boost_remaining_water": {
-                "name": "Water boost remaining",
-                "unit_of_measurement": "minutes"
-            }
-        },
-        "climate": {
-            "climate": {
-                "name": "Climate"
-            }
-        },
-        "select": {
-            "system_mode_water": {
-                "name": "Water mode",
-                "state": {
-                    "off": "Always off",
-                    "auto": "Schedule",
-                    "heat": "Always on",
-                    "boost": "Boost"
-                }
-            }
-        },
-        "number": {
-            "heating_boost_duration": {
-                "name": "Heating boost duration"
-            },
-            "water_boost_duration": {
-                "name": "Water boost duration"
-            },
-            "heating_frost_prevention": {
-                "name": "Heating frost prevention"
-            },
-            "heating_boost_temperature": {
-                "name": "Heating boost temperature"
-            }
-        },
-        "button": {
-            "boost_water": {
-                "name": "Water boost"
-            },
-            "boost_heating": {
-                "name": "Heating boost"
-            }
-        }
-    },
-    "services": {
-        "boost_heating": {
-            "name": "Boost heating",
-            "description": "Boost the heating.",
-            "fields": {
-                "config_entry_id": {
-                    "name": "Hive Thermostat",
-                    "description": "Select the Hive Thermostat to boost."
-                },
-                "temperature_to_boost": {
-                    "name": "Temperature",
-                    "description": "Temperature to boost to (or use default if omitted)."
-                },
-                "minutes_to_boost": {
-                    "name": "Minutes",
-                    "description": "Number of minutes to boost (or use default if omitted)."
-                }
-            }
-        },
-        "cancel_boost_heating": {
-            "name": "Cancel heating boost",
-            "description": "Cancels the heating boost.",
-            "fields": {
-                "config_entry_id": {
-                    "name": "Hive Thermostat",
-                    "description": "Select the Hive Thermostat to cancel the boost."
-                }
-            }
-        },
-        "boost_water": {
-            "name": "Boost water",
-            "description": "Boost the water.",
-            "fields": {
-                "config_entry_id": {
-                    "name": "Hive Thermostat",
-                    "description": "Select the Hive Thermostat to boost."
-                },
-                "minutes_to_boost": {
-                    "name": "Minutes",
-                    "description": "Number of minutes to boost (or use default if omitted)."
-                }
-            }
-        },
-        "cancel_boost_water": {
-            "name": "Cancel water boost",
-            "description": "Cancels the water boost.",
-            "fields": {
-                "config_entry_id": {
-                    "name": "Hive Thermostat",
-                    "description": "Select the Hive Thermostat to cancel the boost."
-                }
-            }
-        }
-    },
-    "exceptions": {
-        "not_loaded": {
-            "message": "{target} is not loaded."
-        },
-        "integration_not_found": {
-            "message": "Integration \"{target}\" not found in registry."
-        },
-        "wrong_model": {
-            "message": "This device does not support this action."
-        }
+      }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hive Local Thermostat",
+        "description": "Enter the entity name and configure parameters.",
+        "data": {
+          "mqtt_topic": "MQTT topic",
+          "model": "Model",
+          "show_heat_schedule_mode": "Show heat schedule mode"
+        },
+        "data_description": {
+          "mqtt_topic": "Must be exact case, e.g. zigbee2mqtt/HiveReceiver",
+          "show_heat_schedule_mode": "Enable if you want to have the option to use the Hive thermostat built in schedules for heating, shows as Auto in the climate control."
+        }
+      }
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "otr1": "OTR1",
+        "slr1": "SLR1",
+        "slr2": "SLR2"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "heat_boost": {
+        "name": "Heating boost"
+      }
+    },
+    "sensor": {
+      "local_temperature_heat": {
+        "name": "Current temperature"
+      },
+      "running_state_heat": {
+        "name": "Running state heat",
+        "state": {
+          "off": "Off",
+          "idle": "Idle",
+          "heat": "Heating",
+          "preheating": "Preheating"
+        }
+      },
+      "boost_remaining_heat": {
+        "name": "Heating boost remaining",
+        "unit_of_measurement": "minutes"
+      }
+    },
+    "climate": {
+      "climate": {
+        "name": "Climate"
+      }
+    },
+    "select": {},
+    "number": {
+      "heating_boost_duration": {
+        "name": "Heating boost duration"
+      },
+      "heating_frost_prevention": {
+        "name": "Heating frost prevention"
+      },
+      "heating_boost_temperature": {
+        "name": "Heating boost temperature"
+      }
+    },
+    "button": {
+      "boost_heating": {
+        "name": "Heating boost"
+      }
+    }
+  },
+  "services": {
+    "boost_heating": {
+      "name": "Boost heating",
+      "description": "Boost the heating.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hive Thermostat",
+          "description": "Select the Hive Thermostat to boost."
+        },
+        "temperature_to_boost": {
+          "name": "Temperature",
+          "description": "Temperature to boost to (or use default if omitted)."
+        },
+        "minutes_to_boost": {
+          "name": "Minutes",
+          "description": "Number of minutes to boost (or use default if omitted)."
+        }
+      }
+    },
+    "cancel_boost_heating": {
+      "name": "Cancel heating boost",
+      "description": "Cancels the heating boost.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hive Thermostat",
+          "description": "Select the Hive Thermostat to cancel the boost."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "{target} is not loaded."
+    },
+    "integration_not_found": {
+      "message": "Integration \"{target}\" not found in registry."
+    },
+    "wrong_model": {
+      "message": "This device does not support this action."
+    }
+  }
 }
