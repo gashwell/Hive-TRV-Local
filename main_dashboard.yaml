@@ -1,0 +1,562 @@
+# Main home automation dashboard
+# This is G's primary HA dashboard covering all rooms
+
+views:
+
+  # ── Main ──────────────────────────────────────────────────────────────────
+  - type: sections
+    title: Main
+    icon: mdi:monitor-dashboard
+    max_columns: 3
+    visible:
+      - user: 7b550defd3c24cfbb0adb279cf5538e5
+      - user: 5e03e1cc48584da78a3408ad88131563
+    header:
+      card:
+        type: markdown
+        text_only: true
+        content: |-
+          # Hello {{ user }}
+          Your weather todays is 
+    badges:
+      - type: entity
+        show_name: false
+        show_state: true
+        show_icon: true
+        entity: weather.home
+        tap_action:
+          action: perform-action
+          perform_action: ''
+          target: {}
+        state_content:
+          - state
+          - temperature
+          - wind_speed
+        show_entity_picture: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: New section
+        cards: []
+
+  # ── Bathroom ──────────────────────────────────────────────────────────────
+  - type: sections
+    max_columns: 3
+    title: Bathroom
+    path: bathroom
+    icon: mdi:bathtub-outline
+    sections:
+      - type: grid
+        cards: []
+      - type: grid
+        cards:
+          - type: heading
+            heading: New section
+    badges:
+      - type: custom:button-card
+        entity: switch.bathroom_extractor_boostmode
+        name: Bathroom Extractor
+        icon: mdi:fan
+        show_state: false
+        show_name: true
+        show_icon: true
+        show_label: true
+        label: |
+          [[[
+            var flow = states['sensor.bathroom_extractor_flow'].state;
+            return flow + ' ' + states['sensor.bathroom_extractor_flow'].attributes.unit_of_measurement;
+          ]]]
+        styles:
+          card:
+            - border-radius: 50px
+            - padding: 6px 14px
+            - background-color: |
+                [[[
+                  var flow = parseFloat(states['sensor.bathroom_extractor_flow'].state);
+                  return flow > 0
+                    ? 'rgba(var(--color-blue), 0.2)'
+                    : 'rgba(var(--primary-text-color), 0.05)';
+                ]]]
+            - border: |
+                [[[
+                  var flow = parseFloat(states['sensor.bathroom_extractor_flow'].state);
+                  return flow > 0
+                    ? '1px solid rgba(var(--color-blue), 0.8)'
+                    : '1px solid rgba(var(--primary-text-color), 0.2)';
+                ]]]
+          icon:
+            - color: |
+                [[[
+                  var flow = parseFloat(states['sensor.bathroom_extractor_flow'].state);
+                  var boost = states['switch.bathroom_extractor_boostmode'].state;
+                  var fanState = states['sensor.bathroom_extractor_state'].state;
+                  if (flow <= 0) return 'white';
+                  if (boost === 'on') return 'red';
+                  if (fanState === 'Light ventilation') return 'yellow';
+                  if (fanState === 'Trickle ventilation') return 'green';
+                  if (fanState === 'Humidity ventilation') return 'orange';
+                  return 'white';
+                ]]]
+            - animation: |
+                [[[
+                  var flow = parseFloat(states['sensor.bathroom_extractor_flow'].state);
+                  var rpm = parseFloat(states['sensor.bathroom_extractor_rpm'].state);
+                  if (flow <= 0) return 'none';
+                  var duration = Math.max(0.5, (3000 / rpm)).toFixed(2);
+                  return 'rotating ' + duration + 's linear infinite';
+                ]]]
+          name:
+            - font-size: 12px
+          label:
+            - font-size: 10px
+            - opacity: '0.7'
+        tap_action:
+          action: fire-dom-event
+          browser_mod:
+            service: browser_mod.popup
+            data:
+              title: Bathroom Extractor
+              content:
+                type: vertical-stack
+                cards:
+                  - type: entities
+                    entities:
+                      - entity: switch.bathroom_extractor_boostmode
+                        name: Boost
+                  - type: glance
+                    title: Live Readings
+                    columns: 2
+                    entities:
+                      - entity: sensor.bathroom_extractor_humidity
+                        name: Humidity
+                      - entity: sensor.bathroom_extractor_temperature
+                        name: Temp
+                      - entity: sensor.bathroom_extractor_flow
+                        name: Flow
+                      - entity: sensor.bathroom_extractor_light
+                        name: Light
+                  - type: history-graph
+                    title: Humidity & Temperature
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.bathroom_extractor_humidity
+                        name: Humidity
+                      - entity: sensor.bathroom_extractor_temperature
+                        name: Temperature
+                  - type: history-graph
+                    title: RPM & Flow
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.bathroom_extractor_rpm
+                        name: RPM
+                      - entity: sensor.bathroom_extractor_flow
+                        name: Flow
+                  - type: entities
+                    title: Boost Settings
+                    entities:
+                      - entity: number.bathroom_extractor_boostmode_speed
+                        name: Boost Speed
+                      - entity: number.bathroom_extractor_boostmode_time
+                        name: Boost Duration
+                  - type: entities
+                    title: Fan Speed Settings
+                    entities:
+                      - entity: number.bathroom_extractor_fanspeed_humidity
+                        name: Humidity Speed
+                      - entity: number.bathroom_extractor_fanspeed_light
+                        name: Light Speed
+                      - entity: number.bathroom_extractor_fanspeed_trickle
+                        name: Trickle Speed
+      - type: entity
+        entity: sensor.bathroom_extractor_temperature
+      - type: entity
+        entity: light.bathroom_smart_ceiling_light
+
+  # ── Wet Room ──────────────────────────────────────────────────────────────
+  - type: sections
+    max_columns: 3
+    title: Wet Room
+    path: wet-room
+    icon: mdi:shower-head
+    sections:
+      - type: grid
+        cards: []
+    badges:
+      - type: custom:button-card
+        entity: switch.shower_room_wetroom_extractor_boostmode
+        name: WetRoom Extractor
+        icon: mdi:fan
+        show_state: false
+        show_name: true
+        show_icon: true
+        show_label: true
+        label: |
+          [[[
+            var flow = states['sensor.shower_room_wetroom_extractor_flow'].state;
+            return flow + ' ' + states['sensor.shower_room_wetroom_extractor_flow'].attributes.unit_of_measurement;
+          ]]]
+        styles:
+          card:
+            - border-radius: 50px
+            - padding: 6px 14px
+            - background-color: |
+                [[[
+                  var flow = parseFloat(states['sensor.shower_room_wetroom_extractor_flow'].state);
+                  return flow > 0
+                    ? 'rgba(var(--color-blue), 0.2)'
+                    : 'rgba(var(--primary-text-color), 0.05)';
+                ]]]
+            - border: |
+                [[[
+                  var flow = parseFloat(states['sensor.shower_room_wetroom_extractor_flow'].state);
+                  return flow > 0
+                    ? '1px solid rgba(var(--color-blue), 0.8)'
+                    : '1px solid rgba(var(--primary-text-color), 0.2)';
+                ]]]
+          icon:
+            - color: |
+                [[[
+                  var flow = parseFloat(states['sensor.shower_room_wetroom_extractor_flow'].state);
+                  var boost = states['switch.shower_room_wetroom_extractor_boostmode'].state;
+                  var fanState = states['sensor.shower_room_wetroom_extractor_state'].state;
+                  if (flow <= 0) return 'white';
+                  if (boost === 'on') return 'red';
+                  if (fanState === 'Light ventilation') return 'yellow';
+                  if (fanState === 'Trickle ventilation') return 'green';
+                  if (fanState === 'Humidity ventilation') return 'orange';
+                  return 'white';
+                ]]]
+            - animation: |
+                [[[
+                  var flow = parseFloat(states['sensor.shower_room_wetroom_extractor_flow'].state);
+                  var rpm = parseFloat(states['sensor.shower_room_wetroom_extractor_rpm'].state);
+                  if (flow <= 0) return 'none';
+                  var duration = Math.max(0.5, (3000 / rpm)).toFixed(2);
+                  return 'rotating ' + duration + 's linear infinite';
+                ]]]
+          name:
+            - font-size: 12px
+          label:
+            - font-size: 10px
+            - opacity: '0.7'
+        tap_action:
+          action: fire-dom-event
+          browser_mod:
+            service: browser_mod.popup
+            data:
+              title: Bathroom Extractor
+              content:
+                type: vertical-stack
+                cards:
+                  - type: entities
+                    entities:
+                      - entity: switch.shower_room_wetroom_extractor_boostmode
+                        name: Boost
+                  - type: glance
+                    title: Live Readings
+                    columns: 2
+                    entities:
+                      - entity: sensor.shower_room_wetroom_extractor_humidity
+                        name: Humidity
+                      - entity: sensor.shower_room_wetroom_extractor_temperature
+                        name: Temp
+                      - entity: sensor.shower_room_wetroom_extractor_flow
+                        name: Flow
+                      - entity: sensor.shower_room_wetroom_extractor_light
+                        name: Light
+                  - type: history-graph
+                    title: Humidity & Temperature
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.shower_room_wetroom_extractor_humidity
+                        name: Humidity
+                      - entity: sensor.shower_room_wetroom_extractor_temperature
+                        name: Temperature
+                  - type: history-graph
+                    title: RPM & Flow
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.shower_room_wetroom_extractor_rpm
+                        name: RPM
+                      - entity: sensor.shower_room_wetroom_extractor_flow
+                        name: Flow
+                  - type: entities
+                    title: Boost Settings
+                    entities:
+                      - entity: number.shower_room_wetroom_extractor_boostmode_speed
+                        name: Boost Speed
+                      - entity: number.shower_room_wetroom_extractor_boostmode_time
+                        name: Boost Duration
+                  - type: entities
+                    title: Fan Speed Settings
+                    entities:
+                      - entity: number.shower_room_wetroom_extractor_fanspeed_humidity
+                        name: Humidity Speed
+                      - entity: number.shower_room_wetroom_extractor_fanspeed_light
+                        name: Light Speed
+                      - entity: number.shower_room_wetroom_extractor_fanspeed_trickle
+                        name: Trickle Speed
+      - type: entity
+        entity: sensor.shower_room_wetroom_extractor_temperature
+      - type: entity
+        entity: light.wet_room
+        show_name: true
+      - type: entity
+        entity: light.shower
+        show_name: true
+      - type: entity
+        entity: light.toilet
+        show_name: true
+      - type: entity
+        entity: binary_sensor.wetroom_presence_sensor_presence
+
+  # ── Garage ────────────────────────────────────────────────────────────────
+  - type: sections
+    max_columns: 3
+    title: Garage
+    path: garage
+    icon: mdi:garage
+    sections:
+      - type: grid
+        cards: []
+    badges:
+      - type: custom:button-card
+        entity: switch.garage_extractor_boostmode
+        name: Garage Extractor
+        icon: mdi:fan
+        show_state: false
+        show_name: true
+        show_icon: true
+        show_label: true
+        label: |
+          [[[
+            var flow = states['sensor.garage_extractor_flow'].state;
+            return flow + ' ' + states['sensor.garage_extractor_flow'].attributes.unit_of_measurement;
+          ]]]
+        styles:
+          card:
+            - border-radius: 50px
+            - padding: 6px 14px
+            - background-color: |
+                [[[
+                  var flow = parseFloat(states['sensor.garage_extractor_flow'].state);
+                  return flow > 0
+                    ? 'rgba(var(--color-blue), 0.2)'
+                    : 'rgba(var(--primary-text-color), 0.05)';
+                ]]]
+            - border: |
+                [[[
+                  var flow = parseFloat(states['sensor.garage_extractor_flow'].state);
+                  return flow > 0
+                    ? '1px solid rgba(var(--color-blue), 0.8)'
+                    : '1px solid rgba(var(--primary-text-color), 0.2)';
+                ]]]
+          icon:
+            - color: |
+                [[[
+                  var flow = parseFloat(states['sensor.garage_extractor_flow'].state);
+                  var boost = states['switch.garage_extractor_boostmode'].state;
+                  var fanState = states['sensor.garage_extractor_state'].state;
+                  if (flow <= 0) return 'white';
+                  if (boost === 'on') return 'red';
+                  if (fanState === 'Light ventilation') return 'yellow';
+                  if (fanState === 'Trickle ventilation') return 'green';
+                  if (fanState === 'Humidity ventilation') return 'orange';
+                  return 'white';
+                ]]]
+            - animation: |
+                [[[
+                  var flow = parseFloat(states['sensor.garage_extractor_flow'].state);
+                  var rpm = parseFloat(states['sensor.garage_extractor_rpm'].state);
+                  if (flow <= 0) return 'none';
+                  var duration = Math.max(0.5, (3000 / rpm)).toFixed(2);
+                  return 'rotating ' + duration + 's linear infinite';
+                ]]]
+          name:
+            - font-size: 12px
+          label:
+            - font-size: 10px
+            - opacity: '0.7'
+        tap_action:
+          action: fire-dom-event
+          browser_mod:
+            service: browser_mod.popup
+            data:
+              title: Garage Extractor
+              content:
+                type: vertical-stack
+                cards:
+                  - type: entities
+                    entities:
+                      - entity: switch.garage_extractor_boostmode
+                        name: Boost
+                  - type: glance
+                    title: Live Readings
+                    columns: 2
+                    entities:
+                      - entity: sensor.garage_extractor_humidity
+                        name: Humidity
+                      - entity: sensor.garage_extractor_temperature
+                        name: Temp
+                      - entity: sensor.garage_extractor_flow
+                        name: Flow
+                      - entity: sensor.garage_extractor_light
+                        name: Light
+                  - type: history-graph
+                    title: Humidity & Temperature
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.garage_extractor_humidity
+                        name: Humidity
+                      - entity: sensor.garage_extractor_temperature
+                        name: Temperature
+                  - type: history-graph
+                    title: RPM & Flow
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.garage_extractor_rpm
+                        name: RPM
+                      - entity: sensor.garage_extractor_flow
+                        name: Flow
+                  - type: entities
+                    title: Boost Settings
+                    entities:
+                      - entity: number.garage_extractor_boostmode_speed
+                        name: Boost Speed
+                      - entity: number.garage_extractor_boostmode_time
+                        name: Boost Duration
+                  - type: entities
+                    title: Fan Speed Settings
+                    entities:
+                      - entity: number.garage_extractor_fanspeed_humidity
+                        name: Humidity Speed
+                      - entity: number.garage_extractor_fanspeed_light
+                        name: Light Speed
+                      - entity: number.garage_extractor_fanspeed_trickle
+                        name: Trickle Speed
+
+  # ── Guest Room ────────────────────────────────────────────────────────────
+  - type: sections
+    max_columns: 4
+    title: GuestRoom
+    path: guestroom
+    icon: mdi:bed
+    sections:
+      - type: grid
+        cards: []
+    badges:
+      - type: custom:button-card
+        entity: switch.guestroom_extrator_boostmode
+        name: Guest Room Extractor
+        icon: mdi:fan
+        show_state: false
+        show_name: true
+        show_icon: true
+        show_label: true
+        label: |
+          [[[
+            var flow = states['sensor.guestroom_extrator_flow'].state;
+            return flow + ' ' + states['sensor.guestroom_extrator_flow'].attributes.unit_of_measurement;
+          ]]]
+        styles:
+          card:
+            - border-radius: 50px
+            - padding: 6px 14px
+            - background-color: |
+                [[[
+                  var flow = parseFloat(states['sensor.guestroom_extrator_flow'].state);
+                  return flow > 0
+                    ? 'rgba(var(--color-blue), 0.2)'
+                    : 'rgba(var(--primary-text-color), 0.05)';
+                ]]]
+            - border: |
+                [[[
+                  var flow = parseFloat(states['sensor.guestroom_extrator_flow'].state);
+                  return flow > 0
+                    ? '1px solid rgba(var(--color-blue), 0.8)'
+                    : '1px solid rgba(var(--primary-text-color), 0.2)';
+                ]]]
+          icon:
+            - color: |
+                [[[
+                  var flow = parseFloat(states['sensor.guestroom_extrator_flow'].state);
+                  var boost = states['switch.guestroom_extrator_boostmode'].state;
+                  var fanState = states['sensor.guestroom_extrator_state'].state;
+                  if (flow <= 0) return 'white';
+                  if (boost === 'on') return 'red';
+                  if (fanState === 'Light ventilation') return 'yellow';
+                  if (fanState === 'Trickle ventilation') return 'green';
+                  if (fanState === 'Humidity ventilation') return 'orange';
+                  return 'white';
+                ]]]
+            - animation: |
+                [[[
+                  var flow = parseFloat(states['sensor.guestroom_extrator_flow'].state);
+                  var rpm = parseFloat(states['sensor.guestroom_extrator_rpm'].state);
+                  if (flow <= 0) return 'none';
+                  var duration = Math.max(0.5, (3000 / rpm)).toFixed(2);
+                  return 'rotating ' + duration + 's linear infinite';
+                ]]]
+          name:
+            - font-size: 12px
+          label:
+            - font-size: 10px
+            - opacity: '0.7'
+        tap_action:
+          action: fire-dom-event
+          browser_mod:
+            service: browser_mod.popup
+            data:
+              title: Guest Room Extractor
+              content:
+                type: vertical-stack
+                cards:
+                  - type: entities
+                    entities:
+                      - entity: switch.guestroom_extrator_boostmode
+                        name: Boost
+                  - type: glance
+                    title: Live Readings
+                    columns: 2
+                    entities:
+                      - entity: sensor.guestroom_extrator_humidity
+                        name: Humidity
+                      - entity: sensor.guestroom_extrator_temperature
+                        name: Temp
+                      - entity: sensor.guestroom_extrator_flow
+                        name: Flow
+                      - entity: sensor.guestroom_extrator_light
+                        name: Light
+                  - type: history-graph
+                    title: Humidity & Temperature
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.guestroom_extrator_humidity
+                        name: Humidity
+                      - entity: sensor.guestroom_extrator_temperature
+                        name: Temperature
+                  - type: history-graph
+                    title: RPM & Flow
+                    hours_to_show: 24
+                    entities:
+                      - entity: sensor.guestroom_extrator_rpm
+                        name: RPM
+                      - entity: sensor.guestroom_extrator_flow
+                        name: Flow
+                  - type: entities
+                    title: Boost Settings
+                    entities:
+                      - entity: number.guestroom_extrator_boostmode_speed
+                        name: Boost Speed
+                      - entity: number.guestroom_extrator_boostmode_time
+                        name: Boost Duration
+                  - type: entities
+                    title: Fan Speed Settings
+                    entities:
+                      - entity: number.guestroom_extrator_fanspeed_humidity
+                        name: Humidity Speed
+                      - entity: number.guestroom_extrator_fanspeed_light
+                        name: Light Speed
+                      - entity: number.guestroom_extrator_fanspeed_trickle
+                        name: Trickle Speed
