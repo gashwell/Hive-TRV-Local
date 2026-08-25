@@ -1,0 +1,19 @@
+alias: Boiler switch monitor
+description: >
+  Logs every state change on switch.boiler_switch regardless of cause.
+  Shows in the diagnostic logbook with context — who/what triggered it.
+mode: parallel
+max: 10
+trigger:
+  - platform: state
+    entity_id: switch.boiler_switch
+action:
+  - service: logbook.log
+    data:
+      name: Boiler monitor
+      message: >
+        Boiler switch → {{ trigger.to_state.state | upper }}
+        (was {{ trigger.from_state.state }})
+        — triggered by: {{ trigger.to_state.context.user_id or 'automation/unknown' }}
+        at {{ now().strftime('%H:%M:%S') }}
+      entity_id: switch.boiler_switch
