@@ -1,0 +1,17 @@
+# Add this to your configuration.yaml under input_select: or as a helper
+# Settings → Devices & Services → Helpers → Add helper → Dropdown
+#
+# Name: Heating mode
+# Entity ID: input_select.heating_mode
+# Options: Manual, Schedule, Eco, Off
+
+input_select:
+  heating_mode:
+    name: Heating mode
+    options:
+      - Manual
+      - Schedule
+      - Eco
+      - Off
+    initial: Schedule
+    icon: mdi:thermostat

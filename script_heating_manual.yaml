@@ -35,3 +35,8 @@ sequence:
       option: setpoint
 mode: single
 icon: mdi:hand-back-right
+  - service: input_select.select_option
+    target:
+      entity_id: input_select.heating_mode
+    data:
+      option: "Manual"

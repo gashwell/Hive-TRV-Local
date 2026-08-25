@@ -35,3 +35,8 @@ sequence:
       option: schedule
 mode: single
 icon: mdi:calendar-clock
+  - service: input_select.select_option
+    target:
+      entity_id: input_select.heating_mode
+    data:
+      option: "Schedule"

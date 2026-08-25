@@ -25,3 +25,8 @@ sequence:
       entity_id: switch.boiler_switch
 mode: single
 icon: mdi:radiator-off
+  - service: input_select.select_option
+    target:
+      entity_id: input_select.heating_mode
+    data:
+      option: "Off"
