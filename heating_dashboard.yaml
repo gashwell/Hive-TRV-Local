@@ -844,6 +844,175 @@ views:
               - entity: binary_sensor.hive_trv_garage_heat_required
                 name: Garage
 
+      # Current demand state — all TRVs at a glance
+      - type: grid
+        columns: 1
+        cards:
+          - type: custom:mushroom-template-card
+            primary: Current heat demand
+            secondary: >
+              {% set heating = namespace(trvs=[]) %}
+              {% set trvs = {
+                'climate.hive_trv_tv':           'TV',
+                'climate.hive_trv_bay':          'Bay',
+                'climate.hive_trv_dining':       'Dining',
+                'climate.hive_trv_bedroom':      'Bedroom',
+                'climate.hive_trv_kitchen':      'Kitchen',
+                'climate.hive_trv_office':       'Office',
+                'climate.hive_trv_hallway':      'Hallway',
+                'climate.hive_trv_entrance':     'Entrance',
+                'climate.hive_trv_guestroom':    'Guest Room',
+                'climate.hive_trv_conservatory': 'Conservatory',
+                'climate.hive_trv_garage':       'Garage'
+              } %}
+              {% for entity_id, name in trvs.items() %}
+                {% if is_state_attr(entity_id, 'hvac_action', 'heating') %}
+                  {% set heating.trvs = heating.trvs + [name] %}
+                {% endif %}
+              {% endfor %}
+              {% if heating.trvs | count > 0 %}
+                {{ heating.trvs | count }} heating: {{ heating.trvs | join(', ') }}
+              {% else %}
+                No TRVs demanding heat
+              {% endif %}
+            icon: mdi:fire
+            icon_color: >
+              {% if states | selectattr('entity_id', 'in', [
+                'climate.hive_trv_tv','climate.hive_trv_bay','climate.hive_trv_dining',
+                'climate.hive_trv_kitchen','climate.hive_trv_bedroom','climate.hive_trv_office',
+                'climate.hive_trv_hallway','climate.hive_trv_entrance','climate.hive_trv_guestroom',
+                'climate.hive_trv_conservatory','climate.hive_trv_garage'
+              ]) | selectattr('attributes.hvac_action', 'eq', 'heating') | list | count > 0 %}
+                red
+              {% else %}
+                grey
+              {% endif %}
+
+      # Per-TRV demand grid
+      - type: grid
+        columns: 3
+        cards:
+          - type: custom:mushroom-template-card
+            primary: TV
+            secondary: >
+              {{ state_attr('climate.hive_trv_tv', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_tv', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_tv', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_tv', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_tv', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Bay
+            secondary: >
+              {{ state_attr('climate.hive_trv_bay', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_bay', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_bay', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_bay', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_bay', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Dining
+            secondary: >
+              {{ state_attr('climate.hive_trv_dining', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_dining', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_dining', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_dining', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_dining', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Bedroom
+            secondary: >
+              {{ state_attr('climate.hive_trv_bedroom', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_bedroom', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_bedroom', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_bedroom', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_bedroom', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Kitchen
+            secondary: >
+              {{ state_attr('climate.hive_trv_kitchen', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_kitchen', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_kitchen', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_kitchen', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_kitchen', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Office
+            secondary: >
+              {{ state_attr('climate.hive_trv_office', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_office', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_office', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_office', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_office', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Hallway
+            secondary: >
+              {{ state_attr('climate.hive_trv_hallway', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_hallway', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_hallway', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_hallway', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_hallway', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Entrance
+            secondary: >
+              {{ state_attr('climate.hive_trv_entrance', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_entrance', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_entrance', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_entrance', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_entrance', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Guest Room
+            secondary: >
+              {{ state_attr('climate.hive_trv_guestroom', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_guestroom', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_guestroom', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_guestroom', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_guestroom', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Conservatory
+            secondary: >
+              {{ state_attr('climate.hive_trv_conservatory', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_conservatory', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_conservatory', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_conservatory', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_conservatory', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
+          - type: custom:mushroom-template-card
+            primary: Garage
+            secondary: >
+              {{ state_attr('climate.hive_trv_garage', 'current_temperature') | round(1) }}° →
+              {{ state_attr('climate.hive_trv_garage', 'temperature') | round(1) }}°
+              ({{ state_attr('climate.hive_trv_garage', 'pi_heating_demand') | int }}%)
+            icon: mdi:radiator
+            icon_color: "{{ 'red' if is_state_attr('climate.hive_trv_garage', 'hvac_action', 'heating') else 'grey' }}"
+            badge_icon: "{{ 'mdi:fire' if is_state_attr('climate.hive_trv_garage', 'hvac_action', 'heating') else '' }}"
+            badge_color: red
+
       # Battery levels
       - type: grid
         columns: 1
