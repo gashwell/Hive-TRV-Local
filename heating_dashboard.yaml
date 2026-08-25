@@ -138,15 +138,13 @@ views:
 
   # ────────────────────────────────────────────────────────────────────────────
   # VIEW 2 — TRV SETTINGS
-  # One section per TRV with all Hive-controllable settings
+  # Verified entity IDs from Z2M
   # ────────────────────────────────────────────────────────────────────────────
   - title: TRV Settings
     path: trv-settings
     icon: mdi:tune
     type: sections
     sections:
-
-      # ── Living room TRVs ───────────────────────────────────────────────────
 
       - type: grid
         columns: 1
@@ -156,30 +154,48 @@ views:
             entities:
               - entity: climate.hive_trv_tv
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_tv_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_tv_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_tv_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_tv_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_tv_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_tv_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_tv_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_tv_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_tv_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_tv_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_tv_battery
-                name: Battery
-              - entity: sensor.hive_trv_tv_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_tv_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_tv_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_tv_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_tv_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_tv_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -189,30 +205,48 @@ views:
             entities:
               - entity: climate.hive_trv_bay
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_bay_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_bay_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_bay_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_bay_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_bay_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_bay_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_bay_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_bay_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_bay_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_bay_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_bay_battery
-                name: Battery
-              - entity: sensor.hive_trv_bay_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_bay_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_bay_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_bay_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_bay_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_bay_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -222,32 +256,48 @@ views:
             entities:
               - entity: climate.hive_trv_dining
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_dining_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_dining_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_dining_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_dining_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_dining_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_dining_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_dining_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_dining_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_dining_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_dining_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_dining_battery
-                name: Battery
-              - entity: sensor.hive_trv_dining_pi_heating_demand
-                name: Heating demand %
-
-      # ── Individual room TRVs ───────────────────────────────────────────────
+              - entity: number.hive_trv_dining_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_dining_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_dining_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_dining_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_dining_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -257,30 +307,48 @@ views:
             entities:
               - entity: climate.hive_trv_bedroom
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_bedroom_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_bedroom_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_bedroom_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_bedroom_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_bedroom_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_bedroom_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_bedroom_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_bedroom_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_bedroom_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_bedroom_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_bedroom_battery
-                name: Battery
-              - entity: sensor.hive_trv_bedroom_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_bedroom_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_bedroom_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_bedroom_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_bedroom_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_bedroom_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -290,30 +358,48 @@ views:
             entities:
               - entity: climate.hive_trv_kitchen
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_kitchen_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_kitchen_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_kitchen_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_kitchen_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_kitchen_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_kitchen_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_kitchen_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_kitchen_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_kitchen_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_kitchen_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_kitchen_battery
-                name: Battery
-              - entity: sensor.hive_trv_kitchen_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_kitchen_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_kitchen_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_kitchen_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_kitchen_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_kitchen_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -323,30 +409,48 @@ views:
             entities:
               - entity: climate.hive_trv_office
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_office_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_office_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_office_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_office_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_office_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_office_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_office_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_office_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_office_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_office_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_office_battery
-                name: Battery
-              - entity: sensor.hive_trv_office_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_office_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_office_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_office_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_office_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_office_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -356,30 +460,48 @@ views:
             entities:
               - entity: climate.hive_trv_hallway
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_hallway_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_hallway_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_hallway_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_hallway_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_hallway_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_hallway_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_hallway_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_hallway_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_hallway_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_hallway_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_hallway_battery
-                name: Battery
-              - entity: sensor.hive_trv_hallway_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_hallway_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_hallway_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_hallway_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_hallway_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_hallway_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -389,30 +511,48 @@ views:
             entities:
               - entity: climate.hive_trv_entrance
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_entrance_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_entrance_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_entrance_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_entrance_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_entrance_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_entrance_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_entrance_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_entrance_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_entrance_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_entrance_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_entrance_battery
-                name: Battery
-              - entity: sensor.hive_trv_entrance_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_entrance_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_entrance_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_entrance_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_entrance_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_entrance_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -422,30 +562,48 @@ views:
             entities:
               - entity: climate.hive_trv_guestroom
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_guestroom_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_guestroom_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_guestroom_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_guestroom_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_guestroom_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_guestroom_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_guestroom_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_guestroom_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_guestroom_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_guestroom_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_guestroom_battery
-                name: Battery
-              - entity: sensor.hive_trv_guestroom_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_guestroom_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_guestroom_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_guestroom_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_guestroom_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_guestroom_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -455,30 +613,48 @@ views:
             entities:
               - entity: climate.hive_trv_conservatory
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_conservatory_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_conservatory_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_conservatory_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_conservatory_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_conservatory_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_conservatory_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_conservatory_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_conservatory_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_conservatory_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_conservatory_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_conservatory_battery
-                name: Battery
-              - entity: sensor.hive_trv_conservatory_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_conservatory_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_conservatory_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_conservatory_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_conservatory_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_conservatory_preheat_status
+                name: Preheating
 
       - type: grid
         columns: 1
@@ -488,30 +664,48 @@ views:
             entities:
               - entity: climate.hive_trv_garage
                 name: Temperature / mode
+              - type: section
+                label: Schedule and mode
               - entity: select.hive_trv_garage_programming_operation_mode
                 name: Programme mode
               - entity: select.hive_trv_garage_keypad_lockout
                 name: Keypad lock
+              - type: section
+                label: Window detection
               - entity: switch.hive_trv_garage_window_open_feature
                 name: Window open detection
               - entity: switch.hive_trv_garage_window_open_external
                 name: Window open (override)
+              - type: section
+                label: Radiator setup
               - entity: switch.hive_trv_garage_heat_available
                 name: Heat available (off = summer mode)
               - entity: switch.hive_trv_garage_radiator_covered
-                name: Radiator covered
+                name: Radiator covered (room sensor mode)
               - entity: switch.hive_trv_garage_thermostat_orientation
                 name: Orientation (on = vertical)
               - entity: switch.hive_trv_garage_viewing_direction
                 name: Display upside-down
+              - type: section
+                label: Calibration
               - entity: number.hive_trv_garage_regulation_setpoint_offset
-                name: Temperature calibration offset
+                name: Temperature calibration (−2.5 to +2.5°C)
               - entity: number.hive_trv_garage_max_heat_setpoint_limit
                 name: Max temperature limit
-              - entity: sensor.hive_trv_garage_battery
-                name: Battery
-              - entity: sensor.hive_trv_garage_pi_heating_demand
-                name: Heating demand %
+              - entity: number.hive_trv_garage_algorithm_scale_factor
+                name: Control aggressiveness (1=fast, 10=slow)
+              - type: section
+                label: Adaptation
+              - entity: switch.hive_trv_garage_adaptation_run_settings
+                name: Auto nightly adaptation run
+              - entity: select.hive_trv_garage_adaptation_run_control
+                name: Adaptation run (initiate / cancel)
+              - type: section
+                label: Status
+              - entity: binary_sensor.hive_trv_garage_heat_required
+                name: Heat required
+              - entity: binary_sensor.hive_trv_garage_preheat_status
+                name: Preheating
 
   # ────────────────────────────────────────────────────────────────────────────
   # VIEW 3 — DIAGNOSTICS
