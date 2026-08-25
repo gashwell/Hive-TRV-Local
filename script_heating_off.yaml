@@ -3,6 +3,8 @@ description: >
   All TRVs turned off AND boiler switch forced off.
   No heating will occur regardless of TRV demand.
   Re-enable by selecting Manual, Schedule or Eco.
+mode: single
+icon: mdi:radiator-off
 sequence:
   - service: climate.set_hvac_mode
     target:
@@ -23,10 +25,8 @@ sequence:
   - service: switch.turn_off
     target:
       entity_id: switch.boiler_switch
-mode: single
-icon: mdi:radiator-off
   - service: input_select.select_option
     target:
       entity_id: input_select.heating_mode
     data:
-      option: "Off"
+      option: Off

@@ -1,5 +1,7 @@
 alias: Heating — Eco mode
 description: All TRVs set to heat mode then programme mode set to eco.
+mode: single
+icon: mdi:leaf
 sequence:
   - service: climate.set_hvac_mode
     target:
@@ -33,10 +35,8 @@ sequence:
         - select.hive_trv_garage_programming_operation_mode
     data:
       option: eco
-mode: single
-icon: mdi:leaf
   - service: input_select.select_option
     target:
       entity_id: input_select.heating_mode
     data:
-      option: "Eco"
+      option: Eco

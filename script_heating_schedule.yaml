@@ -1,5 +1,7 @@
 alias: Heating — Schedule mode
 description: All TRVs set to heat mode then programme mode set to schedule.
+mode: single
+icon: mdi:calendar-clock
 sequence:
   - service: climate.set_hvac_mode
     target:
@@ -33,10 +35,8 @@ sequence:
         - select.hive_trv_garage_programming_operation_mode
     data:
       option: schedule
-mode: single
-icon: mdi:calendar-clock
   - service: input_select.select_option
     target:
       entity_id: input_select.heating_mode
     data:
-      option: "Schedule"
+      option: Schedule
