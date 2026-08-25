@@ -1,0 +1,41 @@
+alias: Boiler spurious ON guard
+description: >
+  Turns the boiler off immediately if it turns on with no TRV demand.
+  Catches spurious ON events from Z2M OTA checks or other external sources.
+  Runs 10 seconds after the switch turns on to allow legitimate demand
+  to register before checking.
+mode: single
+trigger:
+  - platform: state
+    entity_id: switch.boiler_switch
+    to: "on"
+action:
+  - delay:
+      seconds: 10
+  - condition: state
+    entity_id: switch.boiler_switch
+    state: "on"
+  - condition: template
+    value_template: >
+      {{ states | selectattr('entity_id', 'in', [
+          'binary_sensor.hive_trv_tv_heat_required',
+          'binary_sensor.hive_trv_bay_heat_required',
+          'binary_sensor.hive_trv_dining_heat_required',
+          'binary_sensor.hive_trv_kitchen_heat_required',
+          'binary_sensor.hive_trv_bedroom_heat_required',
+          'binary_sensor.hive_trv_office_heat_required',
+          'binary_sensor.hive_trv_guestroom_heat_required',
+          'binary_sensor.hive_trv_garage_heat_required',
+          'binary_sensor.hive_trv_conservatory_heat_required',
+          'binary_sensor.hive_trv_entrance_heat_required',
+          'binary_sensor.hive_trv_hallway_heat_required'
+      ]) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+  - service: logbook.log
+    data:
+      name: Boiler monitor
+      message: >
+        Spurious ON detected — no TRV demand found — forcing boiler off
+      entity_id: switch.boiler_switch
+  - service: switch.turn_off
+    target:
+      entity_id: switch.boiler_switch
