@@ -1,0 +1,21 @@
+alias: Heating — Schedule mode
+description: All TRVs follow their built-in schedule.
+sequence:
+  - service: select.select_option
+    target:
+      entity_id:
+        - select.hive_trv_tv_programming_operation_mode
+        - select.hive_trv_bay_programming_operation_mode
+        - select.hive_trv_dining_programming_operation_mode
+        - select.hive_trv_bedroom_programming_operation_mode
+        - select.hive_trv_kitchen_programming_operation_mode
+        - select.hive_trv_office_programming_operation_mode
+        - select.hive_trv_hallway_programming_operation_mode
+        - select.hive_trv_entrance_programming_operation_mode
+        - select.hive_trv_guestroom_programming_operation_mode
+        - select.hive_trv_conservatory_programming_operation_mode
+        - select.hive_trv_garage_programming_operation_mode
+    data:
+      option: schedule
+mode: single
+icon: mdi:calendar-clock
