@@ -1,0 +1,20 @@
+alias: Boiler MQTT raw monitor
+description: >
+  Monitors the raw MQTT topic for the ZBMINIR2 and logs every message
+  received — catches anything publishing directly to Z2M bypassing HA.
+mode: parallel
+max: 20
+trigger:
+  - platform: mqtt
+    topic: zigbee2mqtt/Boiler Switch
+  - platform: mqtt
+    topic: zigbee2mqtt/Boiler Switch/set
+action:
+  - service: logbook.log
+    data:
+      name: Boiler MQTT
+      message: >
+        Topic: {{ trigger.topic }}
+        Payload: {{ trigger.payload }}
+        at {{ now().strftime('%H:%M:%S') }}
+      entity_id: switch.boiler_switch
