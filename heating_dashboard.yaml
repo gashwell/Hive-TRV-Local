@@ -1,12 +1,16 @@
 title: Heating
 views:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # VIEW 1 — MAIN HEATING
+  # ────────────────────────────────────────────────────────────────────────────
   - title: Heating
     path: heating
     icon: mdi:radiator
     type: sections
     sections:
 
-      # ── Boiler status ──────────────────────────────────────────────────────
+      # Boiler status
       - type: grid
         columns: 1
         cards:
@@ -18,28 +22,55 @@ views:
             tap_action:
               action: toggle
 
-      # ── Rooms ─────────────────────────────────────────────────────────────
+      # Living room group — thermostat card controls all 3 TRVs together
       - type: grid
-        columns: 2
+        columns: 1
         cards:
           - type: thermostat
             entity: climate.hive_trv_group_living_room
-            name: Living Room
+            name: Living Room (TV · Bay · Dining)
             features:
               - type: climate-hvac-modes
                 hvac_modes:
                   - heat
                   - "off"
 
-          - type: thermostat
-            entity: climate.hive_trv_kitchen
-            name: Kitchen
+      # Living room — individual TRV status (read-only demand view)
+      - type: grid
+        columns: 3
+        cards:
+          - type: tile
+            entity: climate.hive_trv_tv
+            name: TV
+            icon: mdi:radiator
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+          - type: tile
+            entity: climate.hive_trv_bay
+            name: Bay
+            icon: mdi:radiator
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+          - type: tile
+            entity: climate.hive_trv_dining
+            name: Dining
+            icon: mdi:radiator
             features:
               - type: climate-hvac-modes
                 hvac_modes:
                   - heat
                   - "off"
 
+      # Individual rooms
+      - type: grid
+        columns: 2
+        cards:
           - type: thermostat
             entity: climate.hive_trv_bedroom
             name: Bedroom
@@ -48,7 +79,14 @@ views:
                 hvac_modes:
                   - heat
                   - "off"
-
+          - type: thermostat
+            entity: climate.hive_trv_kitchen
+            name: Kitchen
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
           - type: thermostat
             entity: climate.hive_trv_office
             name: Office
@@ -57,25 +95,6 @@ views:
                 hvac_modes:
                   - heat
                   - "off"
-
-          - type: thermostat
-            entity: climate.hive_trv_guestroom
-            name: Guest Room
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-
-          - type: thermostat
-            entity: climate.hive_trv_conservatory
-            name: Conservatory
-            features:
-              - type: climate-hvac-modes
-                hvac_modes:
-                  - heat
-                  - "off"
-
           - type: thermostat
             entity: climate.hive_trv_hallway
             name: Hallway
@@ -84,7 +103,6 @@ views:
                 hvac_modes:
                   - heat
                   - "off"
-
           - type: thermostat
             entity: climate.hive_trv_entrance
             name: Entrance
@@ -93,7 +111,22 @@ views:
                 hvac_modes:
                   - heat
                   - "off"
-
+          - type: thermostat
+            entity: climate.hive_trv_guestroom
+            name: Guest Room
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+          - type: thermostat
+            entity: climate.hive_trv_conservatory
+            name: Conservatory
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
           - type: thermostat
             entity: climate.hive_trv_garage
             name: Garage
@@ -103,24 +136,456 @@ views:
                   - heat
                   - "off"
 
-      # ── Living room TRV detail ─────────────────────────────────────────────
-      - type: grid
-        columns: 3
-        cards:
-          - type: tile
-            entity: sensor.hive_trv_tv_local_temperature
-            name: TV Radiator
-            icon: mdi:thermometer
-          - type: tile
-            entity: sensor.hive_trv_bay_local_temperature
-            name: Bay Radiator
-            icon: mdi:thermometer
-          - type: tile
-            entity: sensor.hive_trv_dining_local_temperature
-            name: Dining Radiator
-            icon: mdi:thermometer
+  # ────────────────────────────────────────────────────────────────────────────
+  # VIEW 2 — TRV SETTINGS
+  # One section per TRV with all Hive-controllable settings
+  # ────────────────────────────────────────────────────────────────────────────
+  - title: TRV Settings
+    path: trv-settings
+    icon: mdi:tune
+    type: sections
+    sections:
 
-      # ── Battery status ─────────────────────────────────────────────────────
+      # ── Living room TRVs ───────────────────────────────────────────────────
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: TV Radiator
+            entities:
+              - entity: climate.hive_trv_tv
+                name: Temperature / mode
+              - entity: select.hive_trv_tv_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_tv_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_tv_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_tv_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_tv_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_tv_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_tv_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_tv_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_tv_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_tv_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_tv_battery
+                name: Battery
+              - entity: sensor.hive_trv_tv_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Bay Radiator
+            entities:
+              - entity: climate.hive_trv_bay
+                name: Temperature / mode
+              - entity: select.hive_trv_bay_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_bay_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_bay_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_bay_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_bay_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_bay_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_bay_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_bay_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_bay_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_bay_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_bay_battery
+                name: Battery
+              - entity: sensor.hive_trv_bay_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Dining Radiator
+            entities:
+              - entity: climate.hive_trv_dining
+                name: Temperature / mode
+              - entity: select.hive_trv_dining_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_dining_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_dining_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_dining_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_dining_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_dining_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_dining_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_dining_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_dining_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_dining_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_dining_battery
+                name: Battery
+              - entity: sensor.hive_trv_dining_pi_heating_demand
+                name: Heating demand %
+
+      # ── Individual room TRVs ───────────────────────────────────────────────
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Bedroom
+            entities:
+              - entity: climate.hive_trv_bedroom
+                name: Temperature / mode
+              - entity: select.hive_trv_bedroom_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_bedroom_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_bedroom_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_bedroom_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_bedroom_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_bedroom_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_bedroom_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_bedroom_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_bedroom_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_bedroom_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_bedroom_battery
+                name: Battery
+              - entity: sensor.hive_trv_bedroom_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Kitchen
+            entities:
+              - entity: climate.hive_trv_kitchen
+                name: Temperature / mode
+              - entity: select.hive_trv_kitchen_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_kitchen_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_kitchen_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_kitchen_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_kitchen_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_kitchen_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_kitchen_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_kitchen_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_kitchen_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_kitchen_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_kitchen_battery
+                name: Battery
+              - entity: sensor.hive_trv_kitchen_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Office
+            entities:
+              - entity: climate.hive_trv_office
+                name: Temperature / mode
+              - entity: select.hive_trv_office_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_office_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_office_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_office_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_office_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_office_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_office_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_office_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_office_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_office_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_office_battery
+                name: Battery
+              - entity: sensor.hive_trv_office_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Hallway
+            entities:
+              - entity: climate.hive_trv_hallway
+                name: Temperature / mode
+              - entity: select.hive_trv_hallway_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_hallway_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_hallway_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_hallway_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_hallway_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_hallway_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_hallway_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_hallway_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_hallway_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_hallway_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_hallway_battery
+                name: Battery
+              - entity: sensor.hive_trv_hallway_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Entrance
+            entities:
+              - entity: climate.hive_trv_entrance
+                name: Temperature / mode
+              - entity: select.hive_trv_entrance_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_entrance_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_entrance_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_entrance_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_entrance_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_entrance_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_entrance_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_entrance_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_entrance_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_entrance_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_entrance_battery
+                name: Battery
+              - entity: sensor.hive_trv_entrance_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Guest Room
+            entities:
+              - entity: climate.hive_trv_guestroom
+                name: Temperature / mode
+              - entity: select.hive_trv_guestroom_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_guestroom_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_guestroom_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_guestroom_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_guestroom_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_guestroom_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_guestroom_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_guestroom_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_guestroom_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_guestroom_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_guestroom_battery
+                name: Battery
+              - entity: sensor.hive_trv_guestroom_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Conservatory
+            entities:
+              - entity: climate.hive_trv_conservatory
+                name: Temperature / mode
+              - entity: select.hive_trv_conservatory_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_conservatory_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_conservatory_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_conservatory_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_conservatory_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_conservatory_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_conservatory_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_conservatory_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_conservatory_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_conservatory_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_conservatory_battery
+                name: Battery
+              - entity: sensor.hive_trv_conservatory_pi_heating_demand
+                name: Heating demand %
+
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Garage
+            entities:
+              - entity: climate.hive_trv_garage
+                name: Temperature / mode
+              - entity: select.hive_trv_garage_programming_operation_mode
+                name: Programme mode
+              - entity: select.hive_trv_garage_keypad_lockout
+                name: Keypad lock
+              - entity: switch.hive_trv_garage_window_open_feature
+                name: Window open detection
+              - entity: switch.hive_trv_garage_window_open_external
+                name: Window open (override)
+              - entity: switch.hive_trv_garage_heat_available
+                name: Heat available (off = summer mode)
+              - entity: switch.hive_trv_garage_radiator_covered
+                name: Radiator covered
+              - entity: switch.hive_trv_garage_thermostat_orientation
+                name: Orientation (on = vertical)
+              - entity: switch.hive_trv_garage_viewing_direction
+                name: Display upside-down
+              - entity: number.hive_trv_garage_regulation_setpoint_offset
+                name: Temperature calibration offset
+              - entity: number.hive_trv_garage_max_heat_setpoint_limit
+                name: Max temperature limit
+              - entity: sensor.hive_trv_garage_battery
+                name: Battery
+              - entity: sensor.hive_trv_garage_pi_heating_demand
+                name: Heating demand %
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # VIEW 3 — DIAGNOSTICS
+  # ────────────────────────────────────────────────────────────────────────────
+  - title: Diagnostics
+    path: diagnostics
+    icon: mdi:chart-line
+    type: sections
+    sections:
+
+      # Boiler history
+      - type: grid
+        columns: 1
+        cards:
+          - type: logbook
+            title: Boiler trigger log
+            entities:
+              - switch.boiler_switch
+              - binary_sensor.hive_trv_tv_heat_required
+              - binary_sensor.hive_trv_bay_heat_required
+              - binary_sensor.hive_trv_dining_heat_required
+              - binary_sensor.hive_trv_bedroom_heat_required
+              - binary_sensor.hive_trv_kitchen_heat_required
+              - binary_sensor.hive_trv_office_heat_required
+              - binary_sensor.hive_trv_hallway_heat_required
+              - binary_sensor.hive_trv_entrance_heat_required
+              - binary_sensor.hive_trv_guestroom_heat_required
+              - binary_sensor.hive_trv_conservatory_heat_required
+              - binary_sensor.hive_trv_garage_heat_required
+            hours_to_show: 24
+
+      # Boiler switch history graph
+      - type: grid
+        columns: 1
+        cards:
+          - type: history-graph
+            title: Boiler on/off — last 24 hours
+            hours_to_show: 24
+            entities:
+              - entity: switch.boiler_switch
+                name: Boiler
+
+      # All TRV demand history
+      - type: grid
+        columns: 1
+        cards:
+          - type: history-graph
+            title: TRV heat demand — last 24 hours
+            hours_to_show: 24
+            entities:
+              - entity: binary_sensor.hive_trv_tv_heat_required
+                name: TV
+              - entity: binary_sensor.hive_trv_bay_heat_required
+                name: Bay
+              - entity: binary_sensor.hive_trv_dining_heat_required
+                name: Dining
+              - entity: binary_sensor.hive_trv_bedroom_heat_required
+                name: Bedroom
+              - entity: binary_sensor.hive_trv_kitchen_heat_required
+                name: Kitchen
+              - entity: binary_sensor.hive_trv_office_heat_required
+                name: Office
+              - entity: binary_sensor.hive_trv_hallway_heat_required
+                name: Hallway
+              - entity: binary_sensor.hive_trv_entrance_heat_required
+                name: Entrance
+              - entity: binary_sensor.hive_trv_guestroom_heat_required
+                name: Guest room
+              - entity: binary_sensor.hive_trv_conservatory_heat_required
+                name: Conservatory
+              - entity: binary_sensor.hive_trv_garage_heat_required
+                name: Garage
+
+      # Battery levels
       - type: grid
         columns: 1
         cards:
@@ -129,34 +594,23 @@ views:
             entities:
               - entity: sensor.hive_trv_tv_battery
                 name: TV
-                icon: mdi:battery
               - entity: sensor.hive_trv_bay_battery
                 name: Bay
-                icon: mdi:battery
               - entity: sensor.hive_trv_dining_battery
                 name: Dining
-                icon: mdi:battery
-              - entity: sensor.hive_trv_office_battery
-                name: Office
-                icon: mdi:battery
               - entity: sensor.hive_trv_bedroom_battery
                 name: Bedroom
-                icon: mdi:battery
-              - entity: sensor.hive_trv_guestroom_battery
-                name: Guest Room
-                icon: mdi:battery
-              - entity: sensor.hive_trv_garage_battery
-                name: Garage
-                icon: mdi:battery
               - entity: sensor.hive_trv_kitchen_battery
                 name: Kitchen
-                icon: mdi:battery
-              - entity: sensor.hive_trv_conservatory_battery
-                name: Conservatory
-                icon: mdi:battery
-              - entity: sensor.hive_trv_entrance_battery
-                name: Entrance
-                icon: mdi:battery
+              - entity: sensor.hive_trv_office_battery
+                name: Office
               - entity: sensor.hive_trv_hallway_battery
                 name: Hallway
-                icon: mdi:battery
+              - entity: sensor.hive_trv_entrance_battery
+                name: Entrance
+              - entity: sensor.hive_trv_guestroom_battery
+                name: Guest room
+              - entity: sensor.hive_trv_conservatory_battery
+                name: Conservatory
+              - entity: sensor.hive_trv_garage_battery
+                name: Garage
