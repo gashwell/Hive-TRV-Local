@@ -1,7 +1,7 @@
 alias: Boiler MQTT raw monitor
 description: >
-  Monitors the raw MQTT topic for the ZBMINIR2 and logs every message
-  received — catches anything publishing directly to Z2M bypassing HA.
+  Monitors the raw MQTT topics for the ZBMINIR2 and Z2M bridge events.
+  Logs everything to the boiler switch logbook entry.
 mode: parallel
 max: 20
 trigger:
@@ -9,12 +9,16 @@ trigger:
     topic: zigbee2mqtt/Boiler Switch
   - platform: mqtt
     topic: zigbee2mqtt/Boiler Switch/set
+  - platform: mqtt
+    topic: zigbee2mqtt/bridge/state
+  - platform: mqtt
+    topic: zigbee2mqtt/bridge/event
 action:
   - service: logbook.log
     data:
       name: Boiler MQTT
       message: >
-        Topic: {{ trigger.topic }}
-        Payload: {{ trigger.payload }}
+        [{{ trigger.topic }}]
+        {{ trigger.payload }}
         at {{ now().strftime('%H:%M:%S') }}
       entity_id: switch.boiler_switch
