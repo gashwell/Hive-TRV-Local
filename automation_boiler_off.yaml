@@ -1,7 +1,7 @@
 alias: Boiler OFF — all TRVs satisfied
 description: >
   Turns the boiler off 3 minutes after all heat_required signals clear.
-  heat_required goes off after the TRV valve has closed.
+  Logs each stage so the diagnostic view shows the full sequence.
 mode: restart
 trigger:
   - platform: state
@@ -38,8 +38,17 @@ condition:
           'binary_sensor.hive_trv_hallway_heat_required'
       ]) | selectattr('state', 'eq', 'on') | list | count == 0 }}
 action:
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: >
+        All TRVs satisfied — starting 3 minute hold-off before switching off
+        (triggered by {{ trigger.to_state.attributes.friendly_name }})
+      entity_id: switch.boiler_switch
+
   - delay:
       minutes: 3
+
   - condition: state
     entity_id: switch.boiler_switch
     state: "on"
@@ -58,6 +67,13 @@ action:
           'binary_sensor.hive_trv_entrance_heat_required',
           'binary_sensor.hive_trv_hallway_heat_required'
       ]) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+
+  - service: logbook.log
+    data:
+      name: Boiler control
+      message: 3 minute hold-off complete — switching boiler off
+      entity_id: switch.boiler_switch
+
   - service: switch.turn_off
     target:
       entity_id: switch.boiler_switch
