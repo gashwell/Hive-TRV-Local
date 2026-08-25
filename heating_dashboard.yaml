@@ -1,0 +1,162 @@
+title: Heating
+views:
+  - title: Heating
+    path: heating
+    icon: mdi:radiator
+    type: sections
+    sections:
+
+      # ── Boiler status ──────────────────────────────────────────────────────
+      - type: grid
+        columns: 1
+        cards:
+          - type: tile
+            entity: switch.boiler_switch
+            name: Boiler
+            icon: mdi:fire
+            color: deep-orange
+            tap_action:
+              action: toggle
+
+      # ── Rooms ─────────────────────────────────────────────────────────────
+      - type: grid
+        columns: 2
+        cards:
+          - type: thermostat
+            entity: climate.hive_trv_group_living_room
+            name: Living Room
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_kitchen
+            name: Kitchen
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_bedroom
+            name: Bedroom
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_office
+            name: Office
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_guestroom
+            name: Guest Room
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_conservatory
+            name: Conservatory
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_hallway
+            name: Hallway
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_entrance
+            name: Entrance
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+          - type: thermostat
+            entity: climate.hive_trv_garage
+            name: Garage
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat
+                  - "off"
+
+      # ── Living room TRV detail ─────────────────────────────────────────────
+      - type: grid
+        columns: 3
+        cards:
+          - type: tile
+            entity: sensor.hive_trv_tv_local_temperature
+            name: TV Radiator
+            icon: mdi:thermometer
+          - type: tile
+            entity: sensor.hive_trv_bay_local_temperature
+            name: Bay Radiator
+            icon: mdi:thermometer
+          - type: tile
+            entity: sensor.hive_trv_dining_local_temperature
+            name: Dining Radiator
+            icon: mdi:thermometer
+
+      # ── Battery status ─────────────────────────────────────────────────────
+      - type: grid
+        columns: 1
+        cards:
+          - type: entities
+            title: Battery levels
+            entities:
+              - entity: sensor.hive_trv_tv_battery
+                name: TV
+                icon: mdi:battery
+              - entity: sensor.hive_trv_bay_battery
+                name: Bay
+                icon: mdi:battery
+              - entity: sensor.hive_trv_dining_battery
+                name: Dining
+                icon: mdi:battery
+              - entity: sensor.hive_trv_office_battery
+                name: Office
+                icon: mdi:battery
+              - entity: sensor.hive_trv_bedroom_battery
+                name: Bedroom
+                icon: mdi:battery
+              - entity: sensor.hive_trv_guestroom_battery
+                name: Guest Room
+                icon: mdi:battery
+              - entity: sensor.hive_trv_garage_battery
+                name: Garage
+                icon: mdi:battery
+              - entity: sensor.hive_trv_kitchen_battery
+                name: Kitchen
+                icon: mdi:battery
+              - entity: sensor.hive_trv_conservatory_battery
+                name: Conservatory
+                icon: mdi:battery
+              - entity: sensor.hive_trv_entrance_battery
+                name: Entrance
+                icon: mdi:battery
+              - entity: sensor.hive_trv_hallway_battery
+                name: Hallway
+                icon: mdi:battery
