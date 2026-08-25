@@ -1,25 +1,10 @@
 alias: Boiler OFF — all TRVs satisfied
 description: >
-  Turns the boiler off 3 minutes after all TRV demand clears.
-  Triggers on hvac_action, heat_required, and a 2-minute watchdog.
-  Re-checks before turning off — aborts if demand returned.
+  Turns the boiler off 3 minutes after all heat_required signals clear.
+  heat_required goes off after the TRV valve has closed.
+  2-minute watchdog catches any missed state changes.
 mode: restart
 trigger:
-  - platform: state
-    entity_id:
-      - climate.hive_trv_tv
-      - climate.hive_trv_bay
-      - climate.hive_trv_dining
-      - climate.hive_trv_kitchen
-      - climate.hive_trv_bedroom
-      - climate.hive_trv_office
-      - climate.hive_trv_guestroom
-      - climate.hive_trv_garage
-      - climate.hive_trv_conservatory
-      - climate.hive_trv_entrance
-      - climate.hive_trv_hallway
-    attribute: hvac_action
-    from: heating
   - platform: state
     entity_id:
       - binary_sensor.hive_trv_tv_heat_required
@@ -43,14 +28,6 @@ condition:
   - condition: template
     value_template: >
       {{ states | selectattr('entity_id', 'in', [
-          'climate.hive_trv_tv', 'climate.hive_trv_bay', 'climate.hive_trv_dining',
-          'climate.hive_trv_kitchen', 'climate.hive_trv_bedroom', 'climate.hive_trv_office',
-          'climate.hive_trv_guestroom', 'climate.hive_trv_garage', 'climate.hive_trv_conservatory',
-          'climate.hive_trv_entrance', 'climate.hive_trv_hallway'
-      ]) | selectattr('attributes.hvac_action', 'eq', 'heating') | list | count == 0 }}
-  - condition: template
-    value_template: >
-      {{ states | selectattr('entity_id', 'in', [
           'binary_sensor.hive_trv_tv_heat_required',
           'binary_sensor.hive_trv_bay_heat_required',
           'binary_sensor.hive_trv_dining_heat_required',
@@ -69,14 +46,6 @@ action:
   - condition: state
     entity_id: switch.boiler_switch
     state: "on"
-  - condition: template
-    value_template: >
-      {{ states | selectattr('entity_id', 'in', [
-          'climate.hive_trv_tv', 'climate.hive_trv_bay', 'climate.hive_trv_dining',
-          'climate.hive_trv_kitchen', 'climate.hive_trv_bedroom', 'climate.hive_trv_office',
-          'climate.hive_trv_guestroom', 'climate.hive_trv_garage', 'climate.hive_trv_conservatory',
-          'climate.hive_trv_entrance', 'climate.hive_trv_hallway'
-      ]) | selectattr('attributes.hvac_action', 'eq', 'heating') | list | count == 0 }}
   - condition: template
     value_template: >
       {{ states | selectattr('entity_id', 'in', [

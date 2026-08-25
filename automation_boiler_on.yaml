@@ -1,24 +1,9 @@
 alias: Boiler ON — any TRV demands heat
 description: >
-  Turns the boiler on immediately when any TRV demands heat.
-  Triggers on both hvac_action and heat_required for reliability.
+  Turns the boiler on immediately when any TRV heat_required goes on.
+  heat_required is set by the TRV firmware after the valve has opened.
 mode: single
 trigger:
-  - platform: state
-    entity_id:
-      - climate.hive_trv_tv
-      - climate.hive_trv_bay
-      - climate.hive_trv_dining
-      - climate.hive_trv_kitchen
-      - climate.hive_trv_bedroom
-      - climate.hive_trv_office
-      - climate.hive_trv_guestroom
-      - climate.hive_trv_garage
-      - climate.hive_trv_conservatory
-      - climate.hive_trv_entrance
-      - climate.hive_trv_hallway
-    attribute: hvac_action
-    to: heating
   - platform: state
     entity_id:
       - binary_sensor.hive_trv_tv_heat_required
