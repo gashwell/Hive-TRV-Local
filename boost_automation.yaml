@@ -1,22 +1,13 @@
-# Heating Boost
-# One automation handles boost for all rooms via input helpers
-# Requires the following helpers (create in Settings → Helpers):
-#
-# input_number.heating_boost_duration
-#   Name: Boost duration
-#   Min: 10, Max: 120, Step: 10, Unit: min, Icon: mdi:timer
-#
-# input_number.heating_boost_temperature  
-#   Name: Boost temperature
-#   Min: 16, Max: 28, Step: 0.5, Unit: °C, Icon: mdi:thermometer
-#
-# input_select.heating_boost_room
-#   Name: Boost room
-#   Options: Living Room, Bedroom, Kitchen, Office, Hallway, Entrance,
-#             Guest Room, Conservatory, Garage, All Rooms
+# Boost automations
+# The UK7004240 TRV handles the boost countdown natively in firmware.
+# All four fields must be sent in a single MQTT payload — the device
+# ignores partial payloads for mode changes.
+# To cancel: send system_mode:heat + temperature_setpoint_hold:0
 
 alias: Heating — Apply boost
-description: Boosts selected room(s) to set temperature for set duration.
+description: >
+  Sends a single MQTT boost payload to all TRVs in the selected room.
+  The TRV firmware handles the countdown and cancels itself when done.
 mode: restart
 trigger:
   - platform: state
@@ -26,39 +17,39 @@ variables:
   room: "{{ states('input_select.heating_boost_room') }}"
   duration: "{{ states('input_number.heating_boost_duration') | int }}"
   temperature: "{{ states('input_number.heating_boost_temperature') | float }}"
-  room_map:
+  room_trvs:
     Living Room:
-      - climate.hive_trv_tv
-      - climate.hive_trv_bay
-      - climate.hive_trv_dining
+      - zigbee2mqtt/Hive TRV TV/set
+      - zigbee2mqtt/Hive TRV Bay/set
+      - zigbee2mqtt/Hive TRV Dining/set
     Bedroom:
-      - climate.hive_trv_bedroom
+      - zigbee2mqtt/Hive TRV Bedroom/set
     Kitchen:
-      - climate.hive_trv_kitchen
+      - zigbee2mqtt/Hive TRV Kitchen/set
     Office:
-      - climate.hive_trv_office
+      - zigbee2mqtt/Hive TRV Office/set
     Hallway:
-      - climate.hive_trv_hallway
+      - zigbee2mqtt/Hive TRV Hallway/set
     Entrance:
-      - climate.hive_trv_entrance
+      - zigbee2mqtt/Hive TRV Entrance/set
     Guest Room:
-      - climate.hive_trv_guestroom
+      - zigbee2mqtt/Hive TRV Guestroom/set
     Conservatory:
-      - climate.hive_trv_conservatory
+      - zigbee2mqtt/Hive TRV Conservatory/set
     Garage:
-      - climate.hive_trv_garage
+      - zigbee2mqtt/Hive TRV Garage/set
     All Rooms:
-      - climate.hive_trv_tv
-      - climate.hive_trv_bay
-      - climate.hive_trv_dining
-      - climate.hive_trv_bedroom
-      - climate.hive_trv_kitchen
-      - climate.hive_trv_office
-      - climate.hive_trv_hallway
-      - climate.hive_trv_entrance
-      - climate.hive_trv_guestroom
-      - climate.hive_trv_conservatory
-      - climate.hive_trv_garage
+      - zigbee2mqtt/Hive TRV TV/set
+      - zigbee2mqtt/Hive TRV Bay/set
+      - zigbee2mqtt/Hive TRV Dining/set
+      - zigbee2mqtt/Hive TRV Bedroom/set
+      - zigbee2mqtt/Hive TRV Kitchen/set
+      - zigbee2mqtt/Hive TRV Office/set
+      - zigbee2mqtt/Hive TRV Hallway/set
+      - zigbee2mqtt/Hive TRV Entrance/set
+      - zigbee2mqtt/Hive TRV Guestroom/set
+      - zigbee2mqtt/Hive TRV Conservatory/set
+      - zigbee2mqtt/Hive TRV Garage/set
 action:
   - service: logbook.log
     data:
@@ -67,52 +58,26 @@ action:
         Boost started — {{ room }}, {{ temperature }}°C for {{ duration }} minutes
       entity_id: switch.boiler_switch
 
-  # Set all target TRVs to boost mode
+  # Send single MQTT payload to each TRV in the selected room
+  # All four fields must be in one message — firmware requirement
   - repeat:
-      for_each: "{{ room_map[room] }}"
-      sequence:
-        - service: climate.set_temperature
-          target:
-            entity_id: "{{ repeat.item }}"
-          data:
-            temperature: "{{ temperature }}"
-        - service: mqtt.publish
-          data:
-            topic: >
-              zigbee2mqtt/{{ state_attr(repeat.item, 'friendly_name') }}/set
-            payload: >
-              {"system_mode":"heat","temperature_setpoint_hold":1,
-               "temperature_setpoint_hold_duration":{{ duration }}}
-
-  # Wait for boost duration then cancel
-  - delay:
-      minutes: "{{ duration }}"
-
-  # Cancel boost — return to previous mode
-  - repeat:
-      for_each: "{{ room_map[room] }}"
+      for_each: "{{ room_trvs[room] }}"
       sequence:
         - service: mqtt.publish
           data:
-            topic: >
-              zigbee2mqtt/{{ state_attr(repeat.item, 'friendly_name') }}/set
+            topic: "{{ repeat.item }}"
             payload: >
-              {"temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}
-
-  - service: input_boolean.turn_off
-    target:
-      entity_id: input_boolean.heating_boost_active
-
-  - service: logbook.log
-    data:
-      name: Boiler control
-      message: "Boost ended — {{ room }}"
-      entity_id: switch.boiler_switch
+              {"system_mode":"emergency_heating",
+               "temperature_setpoint_hold":1,
+               "temperature_setpoint_hold_duration":{{ duration }},
+               "occupied_heating_setpoint":{{ temperature }}}
 
 ---
 
 alias: Heating — Cancel boost
-description: Cancels active boost immediately and returns TRVs to normal mode.
+description: >
+  Cancels active boost on all TRVs in the selected room.
+  Returns them to heat mode following their schedule.
 mode: single
 trigger:
   - platform: state
@@ -120,49 +85,50 @@ trigger:
     to: "off"
 variables:
   room: "{{ states('input_select.heating_boost_room') }}"
-  room_map:
+  room_trvs:
     Living Room:
-      - climate.hive_trv_tv
-      - climate.hive_trv_bay
-      - climate.hive_trv_dining
+      - zigbee2mqtt/Hive TRV TV/set
+      - zigbee2mqtt/Hive TRV Bay/set
+      - zigbee2mqtt/Hive TRV Dining/set
     Bedroom:
-      - climate.hive_trv_bedroom
+      - zigbee2mqtt/Hive TRV Bedroom/set
     Kitchen:
-      - climate.hive_trv_kitchen
+      - zigbee2mqtt/Hive TRV Kitchen/set
     Office:
-      - climate.hive_trv_office
+      - zigbee2mqtt/Hive TRV Office/set
     Hallway:
-      - climate.hive_trv_hallway
+      - zigbee2mqtt/Hive TRV Hallway/set
     Entrance:
-      - climate.hive_trv_entrance
+      - zigbee2mqtt/Hive TRV Entrance/set
     Guest Room:
-      - climate.hive_trv_guestroom
+      - zigbee2mqtt/Hive TRV Guestroom/set
     Conservatory:
-      - climate.hive_trv_conservatory
+      - zigbee2mqtt/Hive TRV Conservatory/set
     Garage:
-      - climate.hive_trv_garage
+      - zigbee2mqtt/Hive TRV Garage/set
     All Rooms:
-      - climate.hive_trv_tv
-      - climate.hive_trv_bay
-      - climate.hive_trv_dining
-      - climate.hive_trv_bedroom
-      - climate.hive_trv_kitchen
-      - climate.hive_trv_office
-      - climate.hive_trv_hallway
-      - climate.hive_trv_entrance
-      - climate.hive_trv_guestroom
-      - climate.hive_trv_conservatory
-      - climate.hive_trv_garage
+      - zigbee2mqtt/Hive TRV TV/set
+      - zigbee2mqtt/Hive TRV Bay/set
+      - zigbee2mqtt/Hive TRV Dining/set
+      - zigbee2mqtt/Hive TRV Bedroom/set
+      - zigbee2mqtt/Hive TRV Kitchen/set
+      - zigbee2mqtt/Hive TRV Office/set
+      - zigbee2mqtt/Hive TRV Hallway/set
+      - zigbee2mqtt/Hive TRV Entrance/set
+      - zigbee2mqtt/Hive TRV Guestroom/set
+      - zigbee2mqtt/Hive TRV Conservatory/set
+      - zigbee2mqtt/Hive TRV Garage/set
 action:
   - repeat:
-      for_each: "{{ room_map[room] }}"
+      for_each: "{{ room_trvs[room] }}"
       sequence:
         - service: mqtt.publish
           data:
-            topic: >
-              zigbee2mqtt/{{ state_attr(repeat.item, 'friendly_name') }}/set
+            topic: "{{ repeat.item }}"
             payload: >
-              {"temperature_setpoint_hold":0,"temperature_setpoint_hold_duration":0}
+              {"system_mode":"heat",
+               "temperature_setpoint_hold":0,
+               "temperature_setpoint_hold_duration":0}
 
   - service: logbook.log
     data:
