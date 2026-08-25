@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRV Schedule Editor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#111;padding:16px}
+.card{background:#fff;border-radius:12px;border:0.5px solid #e0e0e0;padding:16px;margin-bottom:12px}
+h1{font-size:16px;font-weight:500;margin-bottom:16px}
+.row{display:flex;gap:12px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+.row label{font-size:13px;color:#727272;min-width:52px}
+select,input{font-size:13px;background:#fff;color:#111;border:0.5px solid #ccc;border-radius:6px;padding:6px 10px;font-family:inherit}
+.tabs{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap}
+.tab{padding:6px 12px;font-size:13px;border:0.5px solid #ccc;border-radius:6px;background:transparent;color:#727272;cursor:pointer;font-family:inherit}
+.tab.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
+.slots{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.slot{display:flex;align-items:center;gap:8px;background:#f9f9f9;border:0.5px solid #e0e0e0;border-radius:6px;padding:8px 12px}
+.slot-num{font-size:12px;color:#aaa;min-width:16px}
+.slot input[type=time]{width:108px}
+.slot input[type=number]{width:68px}
+.slot-lbl{font-size:12px;color:#727272}
+.rm{background:none;border:none;color:#c0392b;cursor:pointer;font-size:18px;line-height:1;padding:0 4px}
+.btn{padding:7px 14px;font-size:13px;border:0.5px solid #ccc;border-radius:6px;background:transparent;color:#111;cursor:pointer;font-family:inherit}
+.btn:hover{background:#f5f5f5}
+.btn-primary{background:#1a73e8;color:#fff;border-color:#1a73e8}
+.btn-primary:hover{background:#1557b0}
+.btn-success{background:#34a853;color:#fff;border-color:#34a853}
+.btn-success:hover{background:#2d9249}
+.panel{background:#f9f9f9;border:0.5px solid #e0e0e0;border-radius:8px;padding:12px;margin-bottom:10px}
+.panel h3{font-size:13px;font-weight:500;margin-bottom:8px}
+.checks{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chk{display:flex;align-items:center;gap:4px;font-size:13px;color:#555;cursor:pointer}
+.chk input{width:14px;height:14px;cursor:pointer}
+.pact{display:flex;gap:6px;flex-wrap:wrap}
+.msg{font-size:12px;margin-top:6px}
+.msg.ok{color:#34a853}.msg.err{color:#c0392b}.msg.info{color:#1a73e8}
+.section-hdr{font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px}
+.status{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 12px;border-radius:6px;margin-bottom:12px}
+.status.connected{background:#e8f5e9;color:#1b5e20}
+.status.error{background:#fce8e6;color:#b71c1c}
+.status.idle{background:#f5f5f5;color:#555}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot.green{background:#34a853}.dot.red{background:#e53935}.dot.grey{background:#aaa}
+pre{font-size:11px;font-family:monospace;background:#f0f0f0;border:0.5px solid #ddd;border-radius:6px;padding:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin-bottom:6px}
+.no-slots{font-size:13px;color:#aaa;padding:10px 0}
+input#haToken{width:100%;font-family:monospace;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>TRV Schedule Editor</h1>
+
+  <div class="row">
+    <label>HA URL</label>
+    <input id="haUrl" value="http://192.168.41.255:8123" style="flex:1;min-width:200px" />
+  </div>
+  <div class="row">
+    <label>Token</label>
+    <input id="haToken" type="password" placeholder="Paste long-lived access token" style="flex:1" />
+  </div>
+  <div id="connStatus" class="status idle"><span class="dot grey"></span>Not connected</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" id="connectBtn">Connect to HA</button>
+    <button class="btn" id="loadScheduleBtn" disabled>Load current schedule</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <label>Room</label>
+    <select id="roomSel"></select>
+  </div>
+
+  <div class="tabs" id="dayTabs"></div>
+  <div class="slots" id="slotList"></div>
+
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="btn" id="addSlot">+ Add slot</button>
+  </div>
+
+  <div class="section-hdr">Copy options</div>
+
+  <div class="panel">
+    <h3>Copy this day to other days</h3>
+    <div class="checks" id="copyDays"></div>
+    <div class="pact">
+      <button class="btn" id="selAllDays" style="font-size:12px;padding:4px 10px">Select all</button>
+      <button class="btn btn-primary" id="copyDaysBtn">Copy to days</button>
+    </div>
+    <div class="msg" id="copyDaysMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Copy entire week to other rooms</h3>
+    <div class="checks" id="copyRooms"></div>
+    <div class="pact">
+      <button class="btn" id="selAllRooms" style="font-size:12px;padding:4px 10px">Select all</button>
+      <button class="btn btn-primary" id="copyRoomsBtn">Copy to rooms</button>
+    </div>
+    <div class="msg" id="copyRoomsMsg"></div>
+  </div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button class="btn btn-success" id="writeBtn" disabled>Write schedule to TRVs</button>
+    <button class="btn" id="clearBtn">Clear this room</button>
+  </div>
+  <div class="msg" id="writeMsg"></div>
+</div>
+
+<script>
+const DAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+const DAY_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const ROOMS=[
+  {key:'living',  label:'Living Room',  trvs:['Hive TRV TV','Hive TRV Bay','Hive TRV Dining']},
+  {key:'bedroom', label:'Bedroom',      trvs:['Hive TRV Bedroom']},
+  {key:'kitchen', label:'Kitchen',      trvs:['Hive TRV Kitchen']},
+  {key:'office',  label:'Office',       trvs:['Hive TRV Office']},
+  {key:'hallway', label:'Hallway',      trvs:['Hive TRV Hallway']},
+  {key:'entrance',label:'Entrance',     trvs:['Hive TRV Entrance']},
+  {key:'guestroom',label:'Guest Room',  trvs:['Hive TRV Guestroom']},
+  {key:'conservatory',label:'Conservatory',trvs:['Hive TRV Conservatory']},
+  {key:'garage',  label:'Garage',       trvs:['Hive TRV Garage']},
+];
+
+let currentDay=0, connected=false;
+let schedules={};
+ROOMS.forEach(r=>{schedules[r.key]={};DAYS.forEach(d=>{schedules[r.key][d]=[];});});
+
+const roomSel=document.getElementById('roomSel');
+ROOMS.forEach(r=>{ const o=document.createElement('option'); o.value=r.key; o.textContent=r.label; roomSel.appendChild(o); });
+
+function getRoom(){ return ROOMS.find(r=>r.key===roomSel.value); }
+
+function haUrl(){ return document.getElementById('haUrl').value.replace(/\/$/,''); }
+function haToken(){ return document.getElementById('haToken').value.trim(); }
+function haHeaders(){ return {'Authorization':'Bearer '+haToken(),'Content-Type':'application/json'}; }
+
+async function haCall(method,path,body){
+  const r=await fetch(haUrl()+path,{method,headers:haHeaders(),body:body?JSON.stringify(body):undefined});
+  if(!r.ok) throw new Error(r.status+' '+r.statusText);
+  return r.json();
+}
+
+function setStatus(state,msg){
+  const el=document.getElementById('connStatus');
+  el.className='status '+state;
+  const dot=el.querySelector('.dot');
+  dot.className='dot '+(state==='connected'?'green':state==='error'?'red':'grey');
+  el.childNodes[1].textContent=msg;
+}
+
+document.getElementById('connectBtn').addEventListener('click',async()=>{
+  setStatus('idle','Connecting...');
+  try{
+    await haCall('GET','/api/');
+    connected=true;
+    setStatus('connected','Connected to '+haUrl());
+    document.getElementById('loadScheduleBtn').disabled=false;
+    document.getElementById('writeBtn').disabled=false;
+  }catch(e){
+    setStatus('error','Connection failed: '+e.message);
+  }
+});
+
+document.getElementById('loadScheduleBtn').addEventListener('click',async()=>{
+  const room=getRoom();
+  const trv=room.trvs[0];
+  const entityId='climate.'+trv.toLowerCase().replace(/ /g,'_');
+  setMsg('writeMsg','info','Loading schedule from '+trv+'...');
+  try{
+    // Request schedule via MQTT publish
+    await haCall('POST','/api/services/mqtt/publish',{
+      topic:'zigbee2mqtt/'+trv+'/get',
+      payload:JSON.stringify({weekly_schedule:''})
+    });
+    // Wait briefly then read state
+    await new Promise(r=>setTimeout(r,1500));
+    const state=await haCall('GET','/api/states/'+entityId);
+    const ws=state.attributes&&state.attributes.weekly_schedule;
+    if(ws){
+      DAYS.forEach(d=>{
+        if(ws[d]&&ws[d].length){
+          schedules[room.key][d]=ws[d].map(t=>({
+            time:t.transitionTime||t.heatSetpoint_time||'06:00',
+            temp:t.heatSetpoint||20
+          }));
+        }
+      });
+      setMsg('writeMsg','ok','Schedule loaded from device.');
+    } else {
+      setMsg('writeMsg','info','No schedule found on device — starting fresh.');
+    }
+    render();
+  }catch(e){
+    setMsg('writeMsg','err','Load failed: '+e.message);
+  }
+});
+
+document.getElementById('writeBtn').addEventListener('click',async()=>{
+  if(!connected){setMsg('writeMsg','err','Connect to HA first.');return;}
+  const room=getRoom();
+  let written=0, errors=[];
+  setMsg('writeMsg','info','Writing schedules...');
+
+  for(const trv of room.trvs){
+    for(const day of DAYS){
+      const slots=[...schedules[room.key][day]].sort((a,b)=>a.time.localeCompare(b.time));
+      if(!slots.length) continue;
+      const transitions=slots.map(s=>({transitionTime:s.time,heatSetpoint:parseFloat(s.temp)}));
+      try{
+        await haCall('POST','/api/services/mqtt/publish',{
+          topic:'zigbee2mqtt/'+trv+'/set',
+          payload:JSON.stringify({weekly_schedule:{[day]:transitions}})
+        });
+        written++;
+        await new Promise(r=>setTimeout(r,200));
+      }catch(e){
+        errors.push(trv+'/'+day+': '+e.message);
+      }
+    }
+    // Set programming_operation_mode to schedule
+    try{
+      await haCall('POST','/api/services/mqtt/publish',{
+        topic:'zigbee2mqtt/'+trv+'/set',
+        payload:JSON.stringify({programming_operation_mode:'schedule'})
+      });
+    }catch(e){ errors.push(trv+' mode: '+e.message); }
+  }
+
+  if(errors.length){
+    setMsg('writeMsg','err','Done with errors: '+errors.join('; '));
+  } else {
+    setMsg('writeMsg','ok',`Written ${written} day schedule(s) to ${room.trvs.length} TRV(s). Mode set to Schedule.`);
+  }
+});
+
+function setMsg(id,type,text){
+  const el=document.getElementById(id);
+  el.className='msg '+type;
+  el.textContent=text;
+}
+
+function renderTabs(){
+  const room=getRoom();
+  const tabs=document.getElementById('dayTabs');
+  tabs.innerHTML=DAYS.map((d,i)=>{
+    const n=schedules[room.key][d].length;
+    return `<button class="tab${i===currentDay?' active':''}" data-i="${i}">${DAY_LABELS[i]}${n?' ('+n+')':''}</button>`;
+  }).join('');
+  tabs.querySelectorAll('.tab').forEach(b=>{
+    b.addEventListener('click',()=>{currentDay=+b.dataset.i;render();});
+  });
+}
+
+function renderSlots(){
+  const room=getRoom();
+  const list=document.getElementById('slotList');
+  const slots=schedules[room.key][DAYS[currentDay]];
+  if(!slots.length){list.innerHTML='<div class="no-slots">No slots — add one below.</div>';return;}
+  list.innerHTML=slots.map((s,i)=>`
+    <div class="slot">
+      <span class="slot-num">${i+1}</span>
+      <input type="time" value="${s.time}" data-i="${i}" data-f="time"/>
+      <span class="slot-lbl">→</span>
+      <input type="number" value="${s.temp}" min="5" max="32" step="0.5" data-i="${i}" data-f="temp"/>
+      <span class="slot-lbl">°C</span>
+      <button class="rm" data-i="${i}" title="Remove">×</button>
+    </div>`).join('');
+  list.querySelectorAll('input').forEach(inp=>{
+    inp.addEventListener('change',()=>{
+      const i=+inp.dataset.i,f=inp.dataset.f,rk=getRoom().key,d=DAYS[currentDay];
+      if(f==='time') schedules[rk][d][i].time=inp.value;
+      if(f==='temp') schedules[rk][d][i].temp=parseFloat(inp.value)||20;
+      renderTabs();
+    });
+  });
+  list.querySelectorAll('.rm').forEach(b=>{
+    b.addEventListener('click',()=>{schedules[getRoom().key][DAYS[currentDay]].splice(+b.dataset.i,1);render();});
+  });
+}
+
+function renderCopyDays(){
+  const cd=document.getElementById('copyDays');
+  cd.innerHTML=DAYS.map((d,i)=>i===currentDay?'':`
+    <label class="chk"><input type="checkbox" value="${d}"/>${DAY_LABELS[i]}</label>`).join('');
+}
+
+function renderCopyRooms(){
+  const room=getRoom();
+  const cr=document.getElementById('copyRooms');
+  cr.innerHTML=ROOMS.filter(r=>r.key!==room.key).map(r=>`
+    <label class="chk"><input type="checkbox" value="${r.key}"/>${r.label}</label>`).join('');
+}
+
+function render(){
+  renderTabs();renderSlots();renderCopyDays();renderCopyRooms();
+  document.getElementById('copyDaysMsg').textContent='';
+  document.getElementById('copyRoomsMsg').textContent='';
+}
+
+document.getElementById('addSlot').addEventListener('click',()=>{
+  const rk=getRoom().key,slots=schedules[rk][DAYS[currentDay]];
+  if(slots.length>=6)return;
+  const last=slots.length?slots[slots.length-1].time:'06:00';
+  const[h,m]=last.split(':').map(Number);
+  const nh=String(Math.min(h+2,23)).padStart(2,'0');
+  slots.push({time:`${nh}:${String(m).padStart(2,'0')}`,temp:20});
+  render();
+});
+
+document.getElementById('selAllDays').addEventListener('click',()=>{
+  document.querySelectorAll('#copyDays input').forEach(c=>c.checked=true);
+});
+document.getElementById('selAllRooms').addEventListener('click',()=>{
+  document.querySelectorAll('#copyRooms input').forEach(c=>c.checked=true);
+});
+
+document.getElementById('copyDaysBtn').addEventListener('click',()=>{
+  const src=DAYS[currentDay],rk=getRoom().key;
+  const targets=[...document.querySelectorAll('#copyDays input:checked')].map(c=>c.value);
+  if(!targets.length){setMsg('copyDaysMsg','err','Select at least one day.');return;}
+  targets.forEach(t=>{schedules[rk][t]=schedules[rk][src].map(s=>({...s}));});
+  render();
+  setMsg('copyDaysMsg','ok','Copied to '+targets.map(t=>DAY_LABELS[DAYS.indexOf(t)]).join(', ')+'.');
+});
+
+document.getElementById('copyRoomsBtn').addEventListener('click',()=>{
+  const srcKey=getRoom().key;
+  const targets=[...document.querySelectorAll('#copyRooms input:checked')].map(c=>c.value);
+  if(!targets.length){setMsg('copyRoomsMsg','err','Select at least one room.');return;}
+  targets.forEach(rk=>{DAYS.forEach(d=>{schedules[rk][d]=schedules[srcKey][d].map(s=>({...s}));});});
+  setMsg('copyRoomsMsg','ok','Full week copied to '+targets.map(t=>ROOMS.find(r=>r.key===t).label).join(', ')+'.');
+});
+
+document.getElementById('clearBtn').addEventListener('click',()=>{
+  const rk=getRoom().key;DAYS.forEach(d=>{schedules[rk][d]=[];});render();
+});
+
+roomSel.addEventListener('change',()=>{currentDay=0;render();});
+render();
+</script>
+</body>
+</html>
