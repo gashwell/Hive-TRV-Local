@@ -1489,16 +1489,3 @@ views:
                 name: Conservatory
               - entity: sensor.hive_trv_garage_battery
                 name: Garage
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # VIEW — SCHEDULE EDITOR
-  # ────────────────────────────────────────────────────────────────────────────
-  - title: Schedule
-    path: schedule
-    icon: mdi:calendar-clock
-    type: sections
-    sections:
-      - type: grid
-        columns: 1
-        cards:
-          - type: custom:trv-schedule-card
