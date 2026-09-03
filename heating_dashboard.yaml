@@ -1195,7 +1195,7 @@ views:
             tap_action:
               action: toggle
 
-      # Heating demand log — shows which TRV triggered with temp and demand %
+      # Standard diagnostics logbook + advanced MQTT toggle
       - type: grid
         columns: 1
         cards:
@@ -1215,6 +1215,31 @@ views:
               - climate.hive_trv_hallway
               - switch.boiler_switch
             hours_to_show: 24
+
+          - type: custom:mushroom-template-card
+            primary: >
+              {{ 'Hide advanced diagnostics' if is_state('input_boolean.show_advanced_diagnostics', 'on') else 'Show advanced diagnostics' }}
+            icon: >
+              {{ 'mdi:bug-check' if is_state('input_boolean.show_advanced_diagnostics', 'on') else 'mdi:bug' }}
+            icon_color: >
+              {{ 'orange' if is_state('input_boolean.show_advanced_diagnostics', 'on') else 'grey' }}
+            tap_action:
+              action: call-service
+              service: input_boolean.toggle
+              service_data:
+                entity_id: input_boolean.show_advanced_diagnostics
+
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: input_boolean.show_advanced_diagnostics
+                state: "on"
+            card:
+              type: logbook
+              title: Advanced — raw MQTT and Z2M bridge events
+              entities:
+                - switch.boiler_switch
+              hours_to_show: 24
 
       # Boiler switch history graph
       - type: grid
